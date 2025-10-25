@@ -88,6 +88,8 @@ export function EyeTrackingExperiment() {
           }
         })
         .saveDataAcrossSessions(true)
+        .showVideoPreview(false) // Hide webcam debug view
+        .showPredictionPoints(false) // Hide prediction points initially
         .begin()
       
       setWebgazer(wg)
@@ -131,7 +133,8 @@ export function EyeTrackingExperiment() {
     intervalRef.current = setInterval(() => {
       setTimeRemaining(prev => {
         if (prev <= 1) {
-          stopTracking()
+          // Auto-stop when timer reaches 0
+          setTimeout(() => stopTracking(), 100)
           return 0
         }
         return prev - 1
@@ -393,13 +396,22 @@ export function EyeTrackingExperiment() {
                 </div>
                 <div className="card-content">
                   <div className="relative">
-                    <img
-                      ref={imageRef}
-                      src={getImageUrl || ''}
-                      alt="Experiment image"
-                      className="w-full h-auto rounded-lg shadow-lg"
-                      style={{ maxHeight: '500px', objectFit: 'contain' }}
-                    />
+                    {getImageUrl ? (
+                      <img
+                        ref={imageRef}
+                        src={getImageUrl}
+                        alt="Experiment image"
+                        className="w-full h-auto rounded-lg shadow-lg"
+                        style={{ maxHeight: '500px', objectFit: 'contain' }}
+                      />
+                    ) : (
+                      <div className="w-full h-64 bg-gray-100 rounded-lg shadow-lg flex items-center justify-center">
+                        <div className="text-center">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto mb-2"></div>
+                          <p className="text-gray-500">Loading image...</p>
+                        </div>
+                      </div>
+                    )}
                     {isTracking && (
                       <div className="absolute inset-0 pointer-events-none">
                         <canvas

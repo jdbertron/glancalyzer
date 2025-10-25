@@ -1,7 +1,7 @@
 {
-  "name": "gazalyzer",
+  "name": "glancalyzer",
   "version": "1.0.0",
-  "description": "Picture analysis platform with AI experiments",
+  "description": "Eye tracking analysis platform for understanding visual attention patterns",
   "type": "module",
   "scripts": {
     "dev": "vite",

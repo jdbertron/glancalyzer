@@ -1,12 +1,12 @@
-# Gazalyzer - AI Picture Analysis Platform
+# Glancalyzer - Eye Tracking Analysis Platform
 
-A modern React TypeScript web application with a self-hosted Convex backend for AI-powered image analysis and experiments.
+A modern React TypeScript web application with a Convex backend for eye tracking analysis and visual attention pattern understanding.
 
 ## Features
 
 - **User Authentication**: Email verification system with secure user management
 - **Picture Upload**: Drag-and-drop image upload with file validation
-- **AI Experiments**: Run various AI analysis experiments on uploaded images
+- **Eye Tracking Experiments**: Webcam-based eye tracking analysis with WebGazer.js
 - **Rate Limiting**: Unregistered users limited to 1 picture per 7 days
 - **Membership Tiers**: Free, Basic, Premium, and Enterprise tiers with different limits
 - **Auto Cleanup**: Automatic deletion of expired free-tier content after 7 days

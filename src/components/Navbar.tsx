@@ -14,7 +14,7 @@ export function Navbar({ user }: NavbarProps) {
           <div className="flex items-center">
             <Link to="/" className="flex items-center space-x-2">
               <BarChart3 className="h-8 w-8 text-primary-600" />
-              <span className="text-xl font-bold text-gray-900">Gazalyzer</span>
+              <span className="text-xl font-bold text-gray-900">Glancalyzer</span>
             </Link>
           </div>
 
@@ -24,7 +24,7 @@ export function Navbar({ user }: NavbarProps) {
               className="btn btn-primary btn-sm flex items-center space-x-2"
             >
               <Upload className="h-4 w-4" />
-              <span>Try It Now</span>
+              <span>Start Analysis</span>
             </Link>
             
             {user ? (
