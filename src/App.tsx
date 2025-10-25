@@ -10,10 +10,13 @@ import { VerifyEmail } from './pages/VerifyEmail'
 import { Dashboard } from './pages/Dashboard'
 import { Upload } from './pages/Upload'
 import { Experiments } from './pages/Experiments'
+import { ExperimentDetails } from './pages/ExperimentDetails'
+import { PictureExperiments } from './pages/PictureExperiments'
 import { EyeTrackingExperiment } from './pages/EyeTrackingExperiment'
 import { MyPictures } from './pages/MyPictures'
 import { Profile } from './pages/Profile'
 import { LoadingSpinner } from './components/LoadingSpinner'
+import { ErrorBoundary } from './components/ErrorBoundary'
 
 function App() {
   const { user, isLoading } = useAuth()
@@ -39,6 +42,12 @@ function App() {
           <Route path="/upload" element={<Upload />} />
           <Route path="/my-pictures" element={<MyPictures />} />
           <Route path="/experiments" element={<Experiments />} />
+          <Route path="/experiments/:experimentId" element={<ExperimentDetails />} />
+          <Route path="/picture-experiments" element={
+            <ErrorBoundary>
+              <PictureExperiments />
+            </ErrorBoundary>
+          } />
           <Route path="/eye-tracking-experiment" element={<EyeTrackingExperiment />} />
           <Route path="/profile" element={<Profile />} />
         </Routes>

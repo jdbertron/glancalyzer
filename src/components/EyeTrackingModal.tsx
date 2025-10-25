@@ -28,7 +28,7 @@ interface EyeTrackingModalProps {
   isOpen: boolean
   onClose: () => void
   pictureId: string
-  imageUrl: string
+  imageUrl: string | null
   onComplete: (data: any) => void
 }
 
@@ -84,6 +84,8 @@ export function EyeTrackingModal({
           }
         })
         .saveDataAcrossSessions(true)
+        .showVideoPreview(false) // Hide webcam initially
+        .showPredictionPoints(false) // Hide prediction points completely
         .begin()
       
       setWebgazer(wg)
@@ -103,10 +105,25 @@ export function EyeTrackingModal({
     if (!webgazer) return
     
     try {
-      await webgazer.showPredictionPoints(true)
-      await webgazer.showVideoPreview(true)
-      setIsCalibrated(true)
-      toast.success('Calibration complete! You can now start the experiment.')
+      // WebGazer uses automatic self-calibration - no webcam preview needed
+      await webgazer.showVideoPreview(false) // Keep webcam hidden
+      await webgazer.showPredictionPoints(false) // Hide prediction points during calibration
+      
+      // Simple calibration - just give WebGazer time to learn
+      toast.success('Calibration starting... Look at the screen and move your mouse around for 3 seconds.', {
+        duration: 3000,
+        style: {
+          background: '#3b82f6',
+          color: 'white',
+        }
+      })
+      
+      // Wait for calibration to complete
+      setTimeout(() => {
+        setIsCalibrated(true)
+        toast.success('Calibration complete! You can now start the experiment.')
+      }, 3000) // Give 3 seconds for calibration
+      
     } catch (error) {
       console.error('Calibration failed:', error)
       toast.error('Calibration failed. Please try again.')
@@ -126,12 +143,73 @@ export function EyeTrackingModal({
     intervalRef.current = setInterval(() => {
       setTimeRemaining(prev => {
         if (prev <= 1) {
-          stopTracking()
+          // Auto-stop when timer reaches 0
+          clearInterval(intervalRef.current!)
+          setIsTracking(false)
+          
+          // Clean up WebGazer and stop webcam
+          if (webgazer) {
+            try {
+              webgazer.pause()
+              webgazer.showVideoPreview(false)
+              webgazer.showPredictionPoints(false)
+              webgazer.end()
+              
+              // Force hide the video element
+              const videoElement = document.querySelector('video') as HTMLVideoElement
+              if (videoElement) {
+                videoElement.style.display = 'none'
+              }
+            } catch (error) {
+              console.error('Error stopping WebGazer:', error)
+            }
+          }
+          
+          // Process results
+          const sessionDuration = Date.now() - (sessionStartTime || Date.now())
+          const processedData = processGazeData(gazeData, sessionDuration)
+          
+          // Always show results first
+          console.log('Showing results immediately')
+          setShowResults(true)
+          toast.success('Eye tracking session completed!')
+          
+          // Try to save to database in background
+          createExperiment({
+            pictureId: pictureId as any,
+            userId: userId || undefined,
+            experimentType: 'Eye Tracking',
+            parameters: {
+              sessionDuration,
+              gazePointCount: gazeData.length
+            }
+          }).then(experimentId => {
+            updateEyeTrackingResults({
+              experimentId: experimentId.experimentId,
+              eyeTrackingData: processedData,
+              status: 'completed'
+            }).then(() => {
+              console.log('Experiment saved successfully')
+            }).catch(error => {
+              console.error('Failed to save experiment:', error)
+            })
+          }).catch(error => {
+            console.error('Failed to create experiment:', error)
+          })
+          
+          // Call completion callback
+          onComplete(processedData)
+          
           return 0
         }
         return prev - 1
       })
     }, 1000)
+    
+    // Ensure prediction points stay hidden
+    if (webgazer) {
+      webgazer.showPredictionPoints(false)
+    }
     
     toast.success('Eye tracking started! Look at the image naturally.')
   }, [webgazer, isCalibrated])
@@ -143,6 +221,22 @@ export function EyeTrackingModal({
     setIsTracking(false)
     if (intervalRef.current) {
       clearInterval(intervalRef.current)
+    }
+    
+    // Clean up WebGazer and stop webcam
+    try {
+      await webgazer.pause()
+      await webgazer.showVideoPreview(false)
+      await webgazer.showPredictionPoints(false)
+      await webgazer.end() // Properly end WebGazer session
+      
+      // Force hide the video element
+      const videoElement = document.querySelector('video') as HTMLVideoElement
+      if (videoElement) {
+        videoElement.style.display = 'none'
+      }
+    } catch (error) {
+      console.error('Error stopping WebGazer:', error)
     }
     
     const sessionDuration = Date.now() - (sessionStartTime || Date.now())
@@ -289,7 +383,20 @@ export function EyeTrackingModal({
         clearInterval(intervalRef.current)
       }
       if (webgazer) {
-        webgazer.end()
+        try {
+          webgazer.pause()
+          webgazer.showVideoPreview(false)
+          webgazer.showPredictionPoints(false)
+          webgazer.end()
+          
+          // Force hide the video element
+          const videoElement = document.querySelector('video') as HTMLVideoElement
+          if (videoElement) {
+            videoElement.style.display = 'none'
+          }
+        } catch (error) {
+          console.error('Error cleaning up WebGazer:', error)
+        }
       }
     }
   }, [webgazer])
@@ -305,7 +412,7 @@ export function EyeTrackingModal({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-lg max-w-6xl w-full max-h-[95vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b">
           <div>
@@ -348,17 +455,26 @@ export function EyeTrackingModal({
 
         <div className="p-6">
           {!showResults ? (
-            <div className="grid lg:grid-cols-2 gap-6">
-              {/* Image Display */}
+            <div className="space-y-6">
+              {/* Image Display - Full Width */}
               <div className="space-y-4">
                 <div className="relative">
-                  <img
-                    ref={imageRef}
-                    src={imageUrl}
-                    alt="Analysis image"
-                    className="w-full h-auto rounded-lg shadow-lg"
-                    style={{ maxHeight: '400px', objectFit: 'contain' }}
-                  />
+                  {imageUrl ? (
+                    <img
+                      ref={imageRef}
+                      src={imageUrl}
+                      alt="Analysis image"
+                      className="w-full h-auto rounded-lg shadow-lg"
+                      style={{ maxHeight: '45vh', objectFit: 'contain' }}
+                    />
+                  ) : (
+                    <div className="w-full h-96 bg-gray-100 rounded-lg flex items-center justify-center">
+                      <div className="text-center">
+                        <div className="text-gray-400 mb-2">Loading image...</div>
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto"></div>
+                      </div>
+                    </div>
+                  )}
                   {isTracking && (
                     <div className="absolute inset-0 pointer-events-none">
                       <canvas
@@ -371,8 +487,8 @@ export function EyeTrackingModal({
                 </div>
               </div>
 
-              {/* Controls */}
-              <div className="space-y-4">
+              {/* Controls - Sticky at bottom */}
+              <div className="space-y-4 bg-white border-t pt-4">
                 <div className="space-y-4">
                   {/* Step 1: Initialize */}
                   <div className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg">
@@ -411,8 +527,8 @@ export function EyeTrackingModal({
                       </h3>
                       <p className="text-sm text-gray-600">
                         {isCalibrated 
-                          ? 'Calibration complete' 
-                          : 'Look at the calibration points to improve accuracy'
+                          ? 'Calibration complete - system is ready' 
+                          : 'Click calibrate, then look at the screen and move your mouse around for 3 seconds'
                         }
                       </p>
                     </div>
@@ -489,6 +605,15 @@ export function EyeTrackingModal({
               <p className="text-gray-600 mb-6">
                 Your eye tracking data has been saved and analyzed.
               </p>
+              <div className="bg-gray-100 p-4 rounded-lg mb-6">
+                <h3 className="font-semibold text-gray-900 mb-2">Session Summary</h3>
+                <p className="text-sm text-gray-600">
+                  Gaze points collected: {gazeData.length}
+                </p>
+                <p className="text-sm text-gray-600">
+                  Session duration: {Math.round((Date.now() - (sessionStartTime || Date.now())) / 1000)}s
+                </p>
+              </div>
               <div className="space-x-4">
                 <button
                   onClick={onClose}

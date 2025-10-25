@@ -15,6 +15,8 @@ import {
   X
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { EYE_TRACKING_EXPERIMENT } from '../constants'
+import { EyeTrackingResults } from '../components/EyeTrackingResults'
 
 // WebGazer types
 interface GazePoint {
@@ -51,8 +53,10 @@ export function EyeTrackingExperiment() {
   const [webcamPermission, setWebcamPermission] = useState(false)
   const [gazeData, setGazeData] = useState<GazePoint[]>([])
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null)
-  const [timeRemaining, setTimeRemaining] = useState(30)
+  const [timeRemaining, setTimeRemaining] = useState<number>(EYE_TRACKING_EXPERIMENT.DURATION_SECONDS)
   const [showResults, setShowResults] = useState(false)
+  const [imageOrientation, setImageOrientation] = useState<'portrait' | 'landscape' | null>(null)
+  const [processedData, setProcessedData] = useState<EyeTrackingData | null>(null)
   
   // Refs
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -84,7 +88,11 @@ export function EyeTrackingExperiment() {
               timestamp: Date.now(),
               confidence: data.confidence || 0.5
             }
-            setGazeData(prev => [...prev, gazePoint])
+            setGazeData(prev => {
+              const newData = [...prev, gazePoint]
+              console.log(`Gaze point collected: ${newData.length} total points`)
+              return newData
+            })
           }
         })
         .saveDataAcrossSessions(true)
@@ -112,8 +120,13 @@ export function EyeTrackingExperiment() {
       setIsInitialized(true)
       setWebcamPermission(true)
       
-      // Show calibration instructions
-      toast.success('WebGazer initialized! Please look at the calibration points.')
+      // Show initialization success
+      toast.success('WebGazer initialized! Starting automatic calibration...')
+      
+      // Start automatic calibration immediately
+      setTimeout(() => {
+        startCalibration()
+      }, 1000)
       
     } catch (error) {
       console.error('WebGazer initialization failed:', error)
@@ -126,15 +139,24 @@ export function EyeTrackingExperiment() {
     if (!webgazer) return
     
     try {
-      // Show calibration points with better visibility
-      await webgazer.showPredictionPoints(true)
+      // Automatic calibration - no visible points needed
+      await webgazer.showPredictionPoints(false) // Keep prediction points hidden
       await webgazer.showVideoPreview(false) // Keep webcam hidden during calibration
       
-      // Add a small delay to ensure calibration points are visible
+      // Give WebGazer time to learn from natural eye movements
+      toast.success('Calibrating... Look at the screen naturally for 3 seconds.', {
+        duration: 3000,
+        style: {
+          background: '#3b82f6',
+          color: 'white',
+        }
+      })
+      
+      // Auto-complete calibration after 3 seconds
       setTimeout(() => {
         setIsCalibrated(true)
-        toast.success('Calibration complete! Look at the red dots that appear on screen, then you can start the experiment.')
-      }, 1000)
+        toast.success('Calibration complete! You can now start the experiment.')
+      }, 3000)
       
     } catch (error) {
       console.error('Calibration failed:', error)
@@ -149,14 +171,15 @@ export function EyeTrackingExperiment() {
     setGazeData([])
     setSessionStartTime(Date.now())
     setIsTracking(true)
-    setTimeRemaining(30)
+    setTimeRemaining(EYE_TRACKING_EXPERIMENT.DURATION_SECONDS)
     
     // Start countdown timer
     intervalRef.current = setInterval(() => {
-      setTimeRemaining(prev => {
+      setTimeRemaining((prev: number) => {
         if (prev <= 1) {
           // Auto-stop when timer reaches 0
-          setTimeout(() => stopTracking(), 100)
+          clearInterval(intervalRef.current!)
+          stopTracking()
           return 0
         }
         return prev - 1
@@ -194,7 +217,13 @@ export function EyeTrackingExperiment() {
     const sessionDuration = Date.now() - (sessionStartTime || Date.now())
     
     // Process the gaze data
+    console.log(`Processing ${gazeData.length} gaze points over ${sessionDuration}ms`)
+    console.log('Raw gaze data sample:', gazeData.slice(0, 5))
+    
     const processedData = processGazeData(gazeData, sessionDuration)
+    console.log('Processed data:', processedData)
+    console.log('Setting processedData state...')
+    setProcessedData(processedData) // Store for immediate display
     
     // Create experiment record
     try {
@@ -221,14 +250,16 @@ export function EyeTrackingExperiment() {
     } catch (error) {
       console.error('Failed to save experiment:', error)
       toast.error('Failed to save experiment results.')
+      // Still show results even if saving failed
+      setShowResults(true)
     }
-  }, [webgazer, isTracking, sessionStartTime, gazeData, pictureId, userId, createExperiment, updateExperimentResults])
+  }, [webgazer, isTracking, sessionStartTime, gazeData, pictureId, userId, createExperiment, updateEyeTrackingResults])
 
   // Process gaze data into fixations and scan path
   const processGazeData = (gazePoints: GazePoint[], duration: number): EyeTrackingData => {
-    // Simple fixation detection (points within 50px for 100ms+)
-    const fixationThreshold = 50 // pixels
-    const fixationDuration = 100 // ms
+    // Simple fixation detection using global constants
+    const fixationThreshold = EYE_TRACKING_EXPERIMENT.FIXATION_THRESHOLD_PX // pixels
+    const fixationDuration = EYE_TRACKING_EXPERIMENT.FIXATION_DURATION_MS // ms
     
     const fixationPoints: Array<{
       x: number
@@ -324,6 +355,12 @@ export function EyeTrackingExperiment() {
     
     return heatmap
   }
+
+  // Detect image orientation
+  const detectImageOrientation = useCallback((img: HTMLImageElement) => {
+    const aspectRatio = img.naturalWidth / img.naturalHeight
+    setImageOrientation(aspectRatio > 1 ? 'landscape' : 'portrait')
+  }, [])
 
   // Cleanup on unmount
   useEffect(() => {
@@ -433,11 +470,11 @@ export function EyeTrackingExperiment() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         {!showResults ? (
-          <div className="grid lg:grid-cols-2 gap-8">
-            {/* Image Display */}
-            <div className="space-y-4">
+          <div className={`${imageOrientation === 'portrait' ? 'flex gap-4' : 'space-y-4'}`}>
+            {/* Image Display - Maximized for eye tracking accuracy */}
+            <div className={`${imageOrientation === 'portrait' ? 'flex-1' : 'w-full'}`}>
               <div className="card">
                 <div className="card-header">
                   <h2 className="card-title">Image to Analyze</h2>
@@ -445,7 +482,7 @@ export function EyeTrackingExperiment() {
                     Look at this image naturally during the experiment
                   </p>
                 </div>
-                <div className="card-content">
+                <div className="card-content p-2">
                   <div className="relative">
                     {getImageUrl ? (
                       <img
@@ -453,7 +490,15 @@ export function EyeTrackingExperiment() {
                         src={getImageUrl}
                         alt="Experiment image"
                         className="w-full h-auto rounded-lg shadow-lg"
-                        style={{ maxHeight: '500px', objectFit: 'contain' }}
+                        style={{ 
+                          maxHeight: imageOrientation === 'portrait' ? '80vh' : '70vh', 
+                          objectFit: 'contain',
+                          width: '100%'
+                        }}
+                        onLoad={(e) => {
+                          const img = e.target as HTMLImageElement
+                          detectImageOrientation(img)
+                        }}
                         onError={(e) => {
                           console.error('Image failed to load:', e)
                           toast.error('Failed to load image')
@@ -488,30 +533,30 @@ export function EyeTrackingExperiment() {
               </div>
             </div>
 
-            {/* Controls */}
-            <div className="space-y-4">
+            {/* Controls - Ultra-compact on the longer side */}
+            <div className={`${imageOrientation === 'portrait' ? 'w-72 flex-shrink-0' : 'w-full'}`}>
               <div className="card">
-                <div className="card-header">
-                  <h2 className="card-title">Experiment Controls</h2>
-                  <p className="card-description">
+                <div className="card-header py-3">
+                  <h2 className="card-title text-lg">Experiment Controls</h2>
+                  <p className="card-description text-sm">
                     Follow the steps to complete your eye tracking experiment
                   </p>
                 </div>
-                <div className="card-content space-y-4">
+                <div className="card-content space-y-2 p-3">
                   {/* Step 1: Initialize */}
-                  <div className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg">
+                  <div className="flex items-center space-x-2 p-2 bg-gray-50 rounded-lg">
                     <div className="flex-shrink-0">
                       {isInitialized ? (
-                        <CheckCircle className="h-6 w-6 text-green-500" />
+                        <CheckCircle className="h-4 w-4 text-green-500" />
                       ) : (
-                        <div className="h-6 w-6 rounded-full border-2 border-gray-300" />
+                        <div className="h-4 w-4 rounded-full border-2 border-gray-300" />
                       )}
                     </div>
-                    <div className="flex-1">
-                      <h3 className="font-medium text-gray-900">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-medium text-gray-900 text-xs">
                         1. Initialize Eye Tracking
                       </h3>
-                      <p className="text-sm text-gray-600">
+                      <p className="text-xs text-gray-600">
                         {isInitialized 
                           ? 'WebGazer initialized successfully' 
                           : 'Setting up eye tracking system...'
@@ -521,56 +566,51 @@ export function EyeTrackingExperiment() {
                   </div>
 
                   {/* Step 2: Calibrate */}
-                  <div className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg">
+                  <div className="flex items-center space-x-2 p-2 bg-gray-50 rounded-lg">
                     <div className="flex-shrink-0">
                       {isCalibrated ? (
-                        <CheckCircle className="h-6 w-6 text-green-500" />
+                        <CheckCircle className="h-4 w-4 text-green-500" />
+                      ) : isInitialized ? (
+                        <div className="h-4 w-4 rounded-full bg-blue-500 animate-pulse" />
                       ) : (
-                        <div className="h-6 w-6 rounded-full border-2 border-gray-300" />
+                        <div className="h-4 w-4 rounded-full border-2 border-gray-300" />
                       )}
                     </div>
-                    <div className="flex-1">
-                      <h3 className="font-medium text-gray-900">
-                        2. Calibrate System
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-medium text-gray-900 text-xs">
+                        2. Auto-Calibrate System
                       </h3>
-                      <p className="text-sm text-gray-600">
+                      <p className="text-xs text-gray-600">
                         {isCalibrated 
-                          ? 'Calibration complete - red dots will appear on screen' 
-                          : 'Click calibrate to show red dots on screen, then look at each one'
+                          ? 'Calibration complete - system is ready' 
+                          : isInitialized
+                            ? 'Calibrating automatically... Look at the screen naturally'
+                            : 'Waiting for initialization...'
                         }
                       </p>
                     </div>
-                    {!isCalibrated && isInitialized && (
-                      <button
-                        onClick={startCalibration}
-                        className="btn btn-primary btn-sm"
-                      >
-                        <Eye className="h-4 w-4 mr-2" />
-                        Calibrate
-                      </button>
-                    )}
                   </div>
 
                   {/* Step 3: Start Experiment */}
-                  <div className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg">
+                  <div className="flex items-center space-x-2 p-2 bg-gray-50 rounded-lg">
                     <div className="flex-shrink-0">
                       {isTracking ? (
-                        <div className="h-6 w-6 rounded-full bg-primary-500 animate-pulse" />
+                        <div className="h-4 w-4 rounded-full bg-primary-500 animate-pulse" />
                       ) : isCalibrated ? (
-                        <div className="h-6 w-6 rounded-full border-2 border-primary-500" />
+                        <div className="h-4 w-4 rounded-full border-2 border-primary-500" />
                       ) : (
-                        <div className="h-6 w-6 rounded-full border-2 border-gray-300" />
+                        <div className="h-4 w-4 rounded-full border-2 border-gray-300" />
                       )}
                     </div>
-                    <div className="flex-1">
-                      <h3 className="font-medium text-gray-900">
-                        3. Start 30-Second Session
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-medium text-gray-900 text-xs">
+                        3. Start {EYE_TRACKING_EXPERIMENT.DURATION_SECONDS}-Second Session
                       </h3>
-                      <p className="text-sm text-gray-600">
+                      <p className="text-xs text-gray-600">
                         {isTracking 
                           ? 'Look at the image naturally - we\'re tracking where your eyes go' 
                           : isCalibrated 
-                            ? 'Ready to start - look at the image naturally for 30 seconds'
+                            ? `Ready to start - look at the image naturally for ${EYE_TRACKING_EXPERIMENT.DURATION_SECONDS} seconds`
                             : 'Complete calibration first'
                         }
                       </p>
@@ -578,22 +618,22 @@ export function EyeTrackingExperiment() {
                     {isCalibrated && !isTracking && (
                       <button
                         onClick={startTracking}
-                        className="btn btn-primary"
+                        className="btn btn-primary btn-sm text-xs px-2 py-1"
                       >
-                        <Play className="h-4 w-4 mr-2" />
-                        Start Experiment
+                        <Play className="h-3 w-3 mr-1" />
+                        Start
                       </button>
                     )}
                   </div>
 
                   {/* Webcam Status */}
-                  <div className="flex items-center space-x-4 p-4 bg-blue-50 rounded-lg">
-                    <Camera className="h-6 w-6 text-blue-500" />
-                    <div className="flex-1">
-                      <h3 className="font-medium text-blue-900">
+                  <div className="flex items-center space-x-2 p-2 bg-blue-50 rounded-lg">
+                    <Camera className="h-4 w-4 text-blue-500" />
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-medium text-blue-900 text-xs">
                         Webcam Status
                       </h3>
-                      <p className="text-sm text-blue-700">
+                      <p className="text-xs text-blue-700">
                         {webcamPermission 
                           ? 'Webcam access granted' 
                           : 'Requesting webcam permission...'
@@ -606,28 +646,129 @@ export function EyeTrackingExperiment() {
             </div>
           </div>
         ) : (
-          <div className="text-center">
-            <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">
-              Experiment Complete!
-            </h2>
-            <p className="text-gray-600 mb-6">
-              Your eye tracking data has been saved and analyzed.
-            </p>
-            <div className="space-x-4">
+          <div className="space-y-6">
+            {/* Success Header */}
+            <div className="text-center">
+              <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                Experiment Complete!
+              </h2>
+              <p className="text-gray-600 mb-6">
+                Your eye tracking data has been saved and analyzed.
+              </p>
+            </div>
+
+
+
+            {/* Results Display */}
+            {processedData && (
+              <div className="card">
+                <div className="card-header">
+                  <h2 className="card-title flex items-center space-x-2">
+                    <Eye className="h-5 w-5" />
+                    <span>Eye Tracking Results</span>
+                  </h2>
+                  <p className="card-description">
+                    Choose a visualization type to explore your eye movement patterns
+                  </p>
+                  
+                  {/* Data Quality Indicator */}
+                  <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-gray-700">Data Quality</span>
+                      <span className={`text-sm font-medium ${
+                        processedData.gazePoints.length > 100 ? 'text-green-600' : 
+                        processedData.gazePoints.length > 50 ? 'text-yellow-600' : 'text-red-600'
+                      }`}>
+                        {processedData.gazePoints.length > 100 ? 'Good' : 
+                         processedData.gazePoints.length > 50 ? 'Fair' : 'Poor'}
+                      </span>
+                    </div>
+                    <div className="text-xs text-gray-600 space-y-1">
+                      <div>Gaze points collected: {processedData.gazePoints.length}</div>
+                      <div>Fixations detected: {processedData.fixationPoints.length}</div>
+                      <div>Session duration: {Math.round(processedData.sessionDuration / 1000)}s</div>
+                      <div>Data rate: {Math.round(processedData.gazePoints.length / (processedData.sessionDuration / 1000))} points/sec</div>
+                    </div>
+                  </div>
+                </div>
+                <div className="card-content">
+                  {getImageUrl ? (
+                    <EyeTrackingResults
+                      data={processedData}
+                      imageUrl={getImageUrl}
+                      imageWidth={800}
+                      imageHeight={600}
+                    />
+                  ) : (
+                    <div className="text-center py-8">
+                      <AlertCircle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
+                      <h3 className="text-lg font-medium text-gray-900 mb-2">
+                        Image Not Available
+                      </h3>
+                      <p className="text-gray-600 mb-4">
+                        Eye tracking data was collected but the image is not available for visualization.
+                      </p>
+                      <div className="bg-gray-50 p-4 rounded-lg">
+                        <h4 className="font-medium text-gray-900 mb-2">Data Summary</h4>
+                        <div className="text-sm text-gray-600 space-y-1">
+                          <div>Gaze points: {processedData.gazePoints.length}</div>
+                          <div>Fixations: {processedData.fixationPoints.length}</div>
+                          <div>Duration: {Math.round(processedData.sessionDuration / 1000)}s</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Fallback if no data collected */}
+            {!processedData && (
+              <div className="card">
+                <div className="card-content">
+                  <div className="text-center py-8">
+                    <AlertCircle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">
+                      No Data Collected
+                    </h3>
+                    <p className="text-gray-600 mb-4">
+                      No eye tracking data was collected during the session.
+                    </p>
+                    <div className="text-sm text-gray-500">
+                      <p>This could happen if:</p>
+                      <ul className="list-disc list-inside mt-2 space-y-1">
+                        <li>Webcam permissions were denied</li>
+                        <li>Poor lighting conditions</li>
+                        <li>Face not detected properly</li>
+                        <li>Calibration failed</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <button
-                onClick={() => navigate('/experiments')}
+                onClick={() => navigate(`/picture-experiments?pictureId=${pictureId}`)}
                 className="btn btn-primary"
               >
-                View Results
+                View All Experiments for This Picture
               </button>
               <button
-                onClick={() => setShowResults(false)}
+                onClick={() => {
+                  setShowResults(false)
+                  setProcessedData(null)
+                  setGazeData([])
+                }}
                 className="btn btn-outline"
               >
                 Run Another Experiment
               </button>
             </div>
+            
           </div>
         )}
       </div>

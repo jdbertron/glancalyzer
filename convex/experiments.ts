@@ -84,18 +84,21 @@ export const createExperiment = mutation({
   },
 });
 
-// Get experiments for a picture
+// Get experiments by picture (for unregistered users)
 export const getPictureExperiments = query({
   args: {
     pictureId: v.id("pictures"),
-    userId: v.optional(v.id("users")),
   },
   returns: v.array(
     v.object({
       _id: v.id("experiments"),
+      _creationTime: v.number(),
+      pictureId: v.id("pictures"),
+      userId: v.optional(v.id("users")),
       experimentType: v.string(),
       parameters: v.optional(v.any()),
       results: v.optional(v.any()),
+      eyeTrackingData: v.optional(v.any()),
       status: v.union(
         v.literal("pending"),
         v.literal("processing"),
@@ -107,16 +110,6 @@ export const getPictureExperiments = query({
     })
   ),
   handler: async (ctx, args) => {
-    const picture = await ctx.db.get(args.pictureId);
-    if (!picture) {
-      return [];
-    }
-
-    // Check access
-    if (args.userId && picture.userId !== args.userId) {
-      return [];
-    }
-
     const experiments = await ctx.db
       .query("experiments")
       .withIndex("by_picture", (q) => q.eq("pictureId", args.pictureId))
@@ -135,6 +128,7 @@ export const getUserExperiments = query({
   returns: v.array(
     v.object({
       _id: v.id("experiments"),
+      _creationTime: v.number(),
       pictureId: v.id("pictures"),
       experimentType: v.string(),
       parameters: v.optional(v.any()),
@@ -300,6 +294,7 @@ export const getExperiment = query({
   returns: v.union(
     v.object({
       _id: v.id("experiments"),
+      _creationTime: v.number(),
       pictureId: v.id("pictures"),
       userId: v.optional(v.id("users")),
       experimentType: v.string(),

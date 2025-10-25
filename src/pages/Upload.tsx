@@ -291,33 +291,45 @@ export function Upload() {
                   </p>
                 </div>
                 
-                {/* Image Thumbnail - Temporarily disabled due to validation error */}
+                {/* Image Thumbnail */}
                 <div className="flex justify-center">
                   <div className="relative">
-                    <div className="w-32 h-32 bg-gray-100 rounded-lg shadow-lg border-2 border-gray-200 flex items-center justify-center">
-                      <ImageIcon className="h-8 w-8 text-gray-400" />
-                    </div>
+                    {uploadedImageUrl ? (
+                      <img
+                        src={uploadedImageUrl}
+                        alt="Uploaded image"
+                        className="w-32 h-32 object-cover rounded-lg shadow-lg border-2 border-gray-200"
+                      />
+                    ) : (
+                      <div className="w-32 h-32 bg-gray-100 rounded-lg shadow-lg border-2 border-gray-200 flex items-center justify-center">
+                        <ImageIcon className="h-8 w-8 text-gray-400" />
+                      </div>
+                    )}
                     <div className="absolute -top-2 -right-2 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
                       <div className="w-2 h-2 bg-white rounded-full"></div>
                     </div>
                   </div>
                 </div>
                 
-                <div className="grid md:grid-cols-2 gap-4">
+                {/* View Experiments for This Picture */}
+                <div className="mb-4">
+                  <button
+                    onClick={() => navigate(`/picture-experiments?pictureId=${uploadedPictureId}`)}
+                    className="btn btn-outline btn-lg w-full flex items-center justify-center space-x-2"
+                  >
+                    <BarChart3 className="h-5 w-5" />
+                    <span>View Experiments for This Picture</span>
+                  </button>
+                </div>
+                
+                {/* Main Action - Eye Tracking */}
+                <div className="mb-4">
                   <button
                     onClick={() => setShowEyeTrackingModal(true)}
-                    className="btn btn-primary btn-lg flex items-center justify-center space-x-2"
+                    className="btn btn-primary btn-lg w-full flex items-center justify-center space-x-2"
                   >
                     <Eye className="h-5 w-5" />
                     <span>Analyze Focus Areas</span>
-                  </button>
-                  
-                  <button
-                    onClick={() => navigate('/experiments')}
-                    className="btn btn-outline btn-lg flex items-center justify-center space-x-2"
-                  >
-                    <BarChart3 className="h-5 w-5" />
-                    <span>View All Experiments</span>
                   </button>
                 </div>
                 
@@ -432,7 +444,7 @@ export function Upload() {
                   isOpen={showEyeTrackingModal}
                   onClose={() => setShowEyeTrackingModal(false)}
                   pictureId={uploadedPictureId}
-                  imageUrl={null} // Temporarily disabled due to validation error
+                  imageUrl={uploadedImageUrl || null}
                   onComplete={(data) => {
                     setShowEyeTrackingModal(false)
                     toast.success('Eye tracking analysis completed!')

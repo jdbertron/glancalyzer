@@ -63,11 +63,22 @@ export function Experiments() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <h2 className="text-2xl font-bold text-gray-900 mb-4">
-            Please log in to view experiments
+            Experiments
           </h2>
-          <Link to="/login" className="btn btn-primary">
-            Sign In
-          </Link>
+          <p className="text-gray-600 mb-6">
+            {experiments && experiments.length > 0 
+              ? `You have ${experiments.length} experiment${experiments.length !== 1 ? 's' : ''} saved locally.`
+              : 'No experiments found. Run an eye tracking experiment to see results here.'
+            }
+          </p>
+          <div className="space-x-4">
+            <Link to="/upload" className="btn btn-primary">
+              Upload Image & Run Experiment
+            </Link>
+            <Link to="/login" className="btn btn-outline">
+              Sign In to Save Experiments
+            </Link>
+          </div>
         </div>
       </div>
     )
