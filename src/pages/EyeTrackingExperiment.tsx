@@ -110,10 +110,16 @@ export function EyeTrackingExperiment() {
     if (!webgazer) return
     
     try {
+      // Show calibration points with better visibility
       await webgazer.showPredictionPoints(true)
-      await webgazer.showVideoPreview(true)
-      setIsCalibrated(true)
-      toast.success('Calibration complete! You can now start the experiment.')
+      await webgazer.showVideoPreview(false) // Keep webcam hidden during calibration
+      
+      // Add a small delay to ensure calibration points are visible
+      setTimeout(() => {
+        setIsCalibrated(true)
+        toast.success('Calibration complete! Look at the red dots that appear on screen, then you can start the experiment.')
+      }, 1000)
+      
     } catch (error) {
       console.error('Calibration failed:', error)
       toast.error('Calibration failed. Please try again.')
@@ -151,6 +157,15 @@ export function EyeTrackingExperiment() {
     setIsTracking(false)
     if (intervalRef.current) {
       clearInterval(intervalRef.current)
+    }
+    
+    // Clean up WebGazer and stop webcam
+    try {
+      await webgazer.pause()
+      await webgazer.showVideoPreview(false)
+      await webgazer.showPredictionPoints(false)
+    } catch (error) {
+      console.error('Error stopping WebGazer:', error)
     }
     
     const sessionDuration = Date.now() - (sessionStartTime || Date.now())
@@ -419,6 +434,10 @@ export function EyeTrackingExperiment() {
                           className="w-full h-full"
                           style={{ position: 'absolute', top: 0, left: 0 }}
                         />
+                        {/* Tracking indicator */}
+                        <div className="absolute top-4 right-4 bg-red-500 text-white px-3 py-1 rounded-full text-sm font-medium animate-pulse">
+                          🔴 Tracking Active
+                        </div>
                       </div>
                     )}
                   </div>
@@ -473,8 +492,8 @@ export function EyeTrackingExperiment() {
                       </h3>
                       <p className="text-sm text-gray-600">
                         {isCalibrated 
-                          ? 'Calibration complete' 
-                          : 'Look at the calibration points to improve accuracy'
+                          ? 'Calibration complete - red dots will appear on screen' 
+                          : 'Click calibrate to show red dots on screen, then look at each one'
                         }
                       </p>
                     </div>
@@ -506,9 +525,9 @@ export function EyeTrackingExperiment() {
                       </h3>
                       <p className="text-sm text-gray-600">
                         {isTracking 
-                          ? 'Tracking your eye movements...' 
+                          ? 'Look at the image naturally - we\'re tracking where your eyes go' 
                           : isCalibrated 
-                            ? 'Ready to start the experiment'
+                            ? 'Ready to start - look at the image naturally for 30 seconds'
                             : 'Complete calibration first'
                         }
                       </p>
