@@ -91,7 +91,11 @@ export function EyeTrackingExperiment() {
             }
             setGazeData(prev => {
               const newData = [...prev, gazePoint]
-              console.log(`Gaze point collected: ${newData.length} total points`)
+              // Enhanced logging with more details
+              console.log(`👁️ Gaze point #${newData.length}: (${Math.round(data.x)}, ${Math.round(data.y)}) confidence: ${(data.confidence || 0.5).toFixed(2)}`)
+              if (newData.length % 10 === 0) {
+                console.log(`📊 Data collection progress: ${newData.length} points collected so far`)
+              }
               return newData
             })
           }
@@ -217,13 +221,19 @@ export function EyeTrackingExperiment() {
     
     const sessionDuration = Date.now() - (sessionStartTime || Date.now())
     
-    // Process the gaze data
-    console.log(`Processing ${gazeData.length} gaze points over ${sessionDuration}ms`)
-    console.log('Raw gaze data sample:', gazeData.slice(0, 5))
+    // Process the gaze data with enhanced logging
+    console.log(`🔄 Processing ${gazeData.length} gaze points over ${sessionDuration}ms`)
+    console.log('📊 Raw gaze data sample:', gazeData.slice(0, 5))
+    console.log(`📈 Data collection rate: ${(gazeData.length / (sessionDuration / 1000)).toFixed(1)} points/second`)
     
     const processedData = processGazeData(gazeData, sessionDuration)
-    console.log('Processed data:', processedData)
-    console.log('Setting processedData state...')
+    console.log('✅ Processed data summary:', {
+      gazePoints: processedData.gazePoints.length,
+      fixations: processedData.fixationPoints.length,
+      sessionDuration: processedData.sessionDuration,
+      scanPathLength: processedData.scanPath.length
+    })
+    console.log('💾 Setting processedData state for display...')
     setProcessedData(processedData) // Store for immediate display
     
     // Create experiment record
@@ -524,9 +534,9 @@ export function EyeTrackingExperiment() {
                           className="w-full h-full"
                           style={{ position: 'absolute', top: 0, left: 0 }}
                         />
-                        {/* Tracking indicator */}
+                        {/* Tracking indicator with data count */}
                         <div className="absolute top-4 right-4 bg-red-500 text-white px-3 py-1 rounded-full text-sm font-medium animate-pulse">
-                          🔴 Tracking Active
+                          🔴 Tracking Active ({gazeData.length} points)
                         </div>
                       </div>
                     )}
@@ -620,6 +630,28 @@ export function EyeTrackingExperiment() {
                       </p>
                     </div>
                   </div>
+
+                  {/* Data Collection Status - Only show during tracking */}
+                  {isTracking && (
+                    <div className="flex items-center space-x-2 p-2 bg-green-50 rounded-lg">
+                      <div className="flex-shrink-0">
+                        <div className="h-4 w-4 rounded-full bg-green-500 animate-pulse" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-medium text-green-900 text-xs">
+                          Data Collection
+                        </h3>
+                        <p className="text-xs text-green-700">
+                          {gazeData.length} gaze points collected
+                          {gazeData.length > 0 && (
+                            <span className="ml-2">
+                              ({Math.round(gazeData.length / (EYE_TRACKING_EXPERIMENT.DURATION_SECONDS - timeRemaining))} pts/sec)
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -639,8 +671,8 @@ export function EyeTrackingExperiment() {
 
 
 
-            {/* Results Display */}
-            {processedData && (
+            {/* Results Display - Only show if data was collected */}
+            {processedData && processedData.gazePoints.length > 0 && (
               <div className="card">
                 <div className="card-header">
                   <h2 className="card-title flex items-center space-x-2">
@@ -702,8 +734,8 @@ export function EyeTrackingExperiment() {
               </div>
             )}
 
-            {/* Fallback if no data collected */}
-            {!processedData && (
+            {/* No Data Message - Only show if no data was collected */}
+            {(!processedData || processedData.gazePoints.length === 0) && (
               <div className="card">
                 <div className="card-content">
                   <div className="text-center py-8">
@@ -723,30 +755,44 @@ export function EyeTrackingExperiment() {
                         <li>Calibration failed</li>
                       </ul>
                     </div>
+                    <div className="mt-6">
+                      <button
+                        onClick={() => {
+                          setShowResults(false)
+                          setProcessedData(null)
+                          setGazeData([])
+                        }}
+                        className="btn btn-primary"
+                      >
+                        Try Again
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Action Buttons */}
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <button
-                onClick={() => navigate(`/picture-experiments?pictureId=${pictureId}`)}
-                className="btn btn-primary"
-              >
-                View All Experiments for This Picture
-              </button>
-              <button
-                onClick={() => {
-                  setShowResults(false)
-                  setProcessedData(null)
-                  setGazeData([])
-                }}
-                className="btn btn-outline"
-              >
-                Run Another Experiment
-              </button>
-            </div>
+            {/* Action Buttons - Only show when data was collected */}
+            {processedData && processedData.gazePoints.length > 0 && (
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <button
+                  onClick={() => navigate(`/picture-experiments?pictureId=${pictureId}`)}
+                  className="btn btn-primary"
+                >
+                  View All Experiments for This Picture
+                </button>
+                <button
+                  onClick={() => {
+                    setShowResults(false)
+                    setProcessedData(null)
+                    setGazeData([])
+                  }}
+                  className="btn btn-outline"
+                >
+                  Run Another Experiment
+                </button>
+              </div>
+            )}
             
           </div>
         )}

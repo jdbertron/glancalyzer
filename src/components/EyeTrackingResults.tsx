@@ -229,13 +229,19 @@ export function EyeTrackingResults({
         {/* Image with Overlay */}
         <div className="card">
           <div className="card-header">
-            <h2 className="card-title">Analysis Results</h2>
+            <h2 className="card-title">Eye Tracking Analysis</h2>
             <p className="card-description">
-              {activeTab === 'heatmap' && 'Areas of high visual attention'}
-              {activeTab === 'scanpath' && 'Eye movement trajectory'}
-              {activeTab === 'fixations' && 'Focus points and duration'}
-              {activeTab === 'stats' && 'Session statistics'}
+              Interactive visualization of your eye movement data. Switch between different analysis views using the tabs above.
             </p>
+            <div className="mt-2 text-sm text-gray-600">
+              <strong>Current View:</strong> {
+                activeTab === 'heatmap' && 'Heatmap - Areas of high visual attention'
+              }
+              {activeTab === 'scanpath' && 'Scan Path - Eye movement trajectory over time'}
+              {activeTab === 'fixations' && 'Fixations - Focus points with duration analysis'}
+              {activeTab === 'stats' && 'Statistics - Numerical metrics and session data'}
+              }
+            </div>
           </div>
           <div className="card-content">
             <div className="relative">
