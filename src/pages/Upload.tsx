@@ -23,16 +23,12 @@ export function Upload() {
   const canUserUpload = useQuery(api.auth.canUserUpload, 
     userId ? { userId } : { ipAddress: 'anonymous' } // Allow anonymous uploads
   )
-  // Temporarily disable these queries to fix the validation error
-  // const uploadedPicture = useQuery(api.pictures.getPicture, 
-  //   uploadedPictureId ? { pictureId: uploadedPictureId as any } : 'skip'
-  // )
-  // const uploadedImageUrl = useQuery(api.pictures.getImageUrl, 
-  //   uploadedPicture?.fileId ? { fileId: uploadedPicture.fileId } : 'skip'
-  // )
-  
-  const uploadedPicture = null
-  const uploadedImageUrl = null
+  const uploadedPicture = useQuery(api.pictures.getPicture, 
+    uploadedPictureId ? { pictureId: uploadedPictureId as any } : 'skip'
+  )
+  const uploadedImageUrl = useQuery(api.pictures.getImageUrl, 
+    uploadedPicture?.fileId ? { fileId: uploadedPicture.fileId } : 'skip'
+  )
 
   // Debug logging
   console.log('Upload state:', { uploadedPictureId, uploadedPicture, uploadedImageUrl })
@@ -101,7 +97,11 @@ export function Upload() {
   }
 
   const handleUpload = async () => {
-    if (!uploadedFile || !canUserUpload?.canUpload) return
+    console.log('handleUpload called:', { uploadedFile: !!uploadedFile, canUserUpload })
+    if (!uploadedFile || !canUserUpload?.canUpload) {
+      console.log('Upload blocked:', { uploadedFile: !!uploadedFile, canUserUpload })
+      return
+    }
 
     setUploading(true)
     try {
@@ -145,6 +145,7 @@ export function Upload() {
       
       setUploadedPictureId(pictureResult.pictureId)
       setShowSuccess(true)
+      console.log('Upload completed, setting success state:', { pictureId: pictureResult.pictureId })
       
       // Reset file input
       if (fileInputRef.current) {

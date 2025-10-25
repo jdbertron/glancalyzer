@@ -107,8 +107,8 @@ export const getUserPictures = query({
       _id: v.id("pictures"),
       fileName: v.string(),
       fileId: v.id("_storage"),
-      uploadedAt: v.number(),
-      fileSize: v.optional(v.number()),
+      uploadedAt: v.float64(),
+      fileSize: v.optional(v.float64()),
       experimentCount: v.number(),
     })
   ),
@@ -148,23 +148,7 @@ export const getPicture = query({
   args: {
     pictureId: v.id("pictures"),
   },
-  returns: v.union(
-    v.object({
-      _id: v.id("pictures"),
-      userId: v.optional(v.id("users")),
-      fileName: v.string(),
-      fileId: v.id("_storage"),
-      uploadedAt: v.number(),
-      fileHash: v.optional(v.string()),
-      fileSize: v.optional(v.number()),
-      ipAddress: v.optional(v.string()),
-      userAgent: v.optional(v.string()),
-      // Legacy fields for existing records
-      expiresAt: v.optional(v.number()),
-      isExpired: v.optional(v.boolean()),
-    }),
-    v.null()
-  ),
+  returns: v.any(),
   handler: async (ctx, args) => {
     const picture = await ctx.db.get(args.pictureId);
     return picture;
