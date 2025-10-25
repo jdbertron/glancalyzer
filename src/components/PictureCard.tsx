@@ -117,3 +117,5 @@ export function PictureCard({ picture, onAnalyzeFocus }: PictureCardProps) {
     </div>
   )
 }
+
+

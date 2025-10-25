@@ -88,9 +88,25 @@ export function EyeTrackingExperiment() {
           }
         })
         .saveDataAcrossSessions(true)
-        .showVideoPreview(false) // Hide webcam debug view
+        .showVideoPreview(true) // Show webcam for debugging
         .showPredictionPoints(false) // Hide prediction points initially
         .begin()
+        
+      // Style the video preview to be more visible and better positioned
+      setTimeout(() => {
+        const videoElement = document.querySelector('video') as HTMLVideoElement
+        if (videoElement) {
+          videoElement.style.position = 'fixed'
+          videoElement.style.top = '20px'
+          videoElement.style.right = '20px'
+          videoElement.style.width = '200px'
+          videoElement.style.height = '150px'
+          videoElement.style.border = '2px solid #3b82f6'
+          videoElement.style.borderRadius = '8px'
+          videoElement.style.zIndex = '1000'
+          videoElement.style.backgroundColor = '#000'
+        }
+      }, 1000)
       
       setWebgazer(wg)
       setIsInitialized(true)
@@ -164,6 +180,13 @@ export function EyeTrackingExperiment() {
       await webgazer.pause()
       await webgazer.showVideoPreview(false)
       await webgazer.showPredictionPoints(false)
+      await webgazer.end() // Properly end WebGazer session
+      
+      // Force hide the video element
+      const videoElement = document.querySelector('video') as HTMLVideoElement
+      if (videoElement) {
+        videoElement.style.display = 'none'
+      }
     } catch (error) {
       console.error('Error stopping WebGazer:', error)
     }
@@ -309,7 +332,20 @@ export function EyeTrackingExperiment() {
         clearInterval(intervalRef.current)
       }
       if (webgazer) {
-        webgazer.end()
+        try {
+          webgazer.pause()
+          webgazer.showVideoPreview(false)
+          webgazer.showPredictionPoints(false)
+          webgazer.end()
+          
+          // Force hide the video element
+          const videoElement = document.querySelector('video') as HTMLVideoElement
+          if (videoElement) {
+            videoElement.style.display = 'none'
+          }
+        } catch (error) {
+          console.error('Error cleaning up WebGazer:', error)
+        }
       }
     }
   }, [webgazer])
@@ -418,12 +454,19 @@ export function EyeTrackingExperiment() {
                         alt="Experiment image"
                         className="w-full h-auto rounded-lg shadow-lg"
                         style={{ maxHeight: '500px', objectFit: 'contain' }}
+                        onError={(e) => {
+                          console.error('Image failed to load:', e)
+                          toast.error('Failed to load image')
+                        }}
                       />
                     ) : (
                       <div className="w-full h-64 bg-gray-100 rounded-lg shadow-lg flex items-center justify-center">
                         <div className="text-center">
                           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto mb-2"></div>
                           <p className="text-gray-500">Loading image...</p>
+                          <p className="text-xs text-gray-400 mt-2">
+                            Picture ID: {pictureId}
+                          </p>
                         </div>
                       </div>
                     )}
