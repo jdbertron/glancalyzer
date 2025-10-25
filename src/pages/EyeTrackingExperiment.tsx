@@ -58,6 +58,7 @@ export function EyeTrackingExperiment() {
   const [imageOrientation, setImageOrientation] = useState<'portrait' | 'landscape' | null>(null)
   const [processedData, setProcessedData] = useState<EyeTrackingData | null>(null)
   
+  
   // Refs
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -387,6 +388,7 @@ export function EyeTrackingExperiment() {
     }
   }, [webgazer])
 
+
   // Initialize on mount
   useEffect(() => {
     if (pictureId && !webgazer) {
@@ -543,79 +545,54 @@ export function EyeTrackingExperiment() {
                   </p>
                 </div>
                 <div className="card-content space-y-2 p-3">
-                  {/* Step 1: Initialize */}
-                  <div className="flex items-center space-x-2 p-2 bg-gray-50 rounded-lg">
-                    <div className="flex-shrink-0">
-                      {isInitialized ? (
-                        <CheckCircle className="h-4 w-4 text-green-500" />
-                      ) : (
+                  {/* Step 1: Initialize - Show until completed */}
+                  {!isInitialized && (
+                    <div className="flex items-center space-x-2 p-2 bg-gray-50 rounded-lg">
+                      <div className="flex-shrink-0">
                         <div className="h-4 w-4 rounded-full border-2 border-gray-300" />
-                      )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-medium text-gray-900 text-xs">
+                          1. Initialize Eye Tracking
+                        </h3>
+                        <p className="text-xs text-gray-600">
+                          Setting up eye tracking system...
+                        </p>
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-medium text-gray-900 text-xs">
-                        1. Initialize Eye Tracking
-                      </h3>
-                      <p className="text-xs text-gray-600">
-                        {isInitialized 
-                          ? 'WebGazer initialized successfully' 
-                          : 'Setting up eye tracking system...'
-                        }
-                      </p>
-                    </div>
-                  </div>
+                  )}
 
-                  {/* Step 2: Calibrate */}
-                  <div className="flex items-center space-x-2 p-2 bg-gray-50 rounded-lg">
-                    <div className="flex-shrink-0">
-                      {isCalibrated ? (
-                        <CheckCircle className="h-4 w-4 text-green-500" />
-                      ) : isInitialized ? (
+                  {/* Step 2: Calibrate - Show when initialized but not calibrated */}
+                  {isInitialized && !isCalibrated && (
+                    <div className="flex items-center space-x-2 p-2 bg-gray-50 rounded-lg">
+                      <div className="flex-shrink-0">
                         <div className="h-4 w-4 rounded-full bg-blue-500 animate-pulse" />
-                      ) : (
-                        <div className="h-4 w-4 rounded-full border-2 border-gray-300" />
-                      )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-medium text-gray-900 text-xs">
+                          2. Auto-Calibrate System
+                        </h3>
+                        <p className="text-xs text-gray-600">
+                          Calibrating automatically... Look at the screen naturally
+                        </p>
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-medium text-gray-900 text-xs">
-                        2. Auto-Calibrate System
-                      </h3>
-                      <p className="text-xs text-gray-600">
-                        {isCalibrated 
-                          ? 'Calibration complete - system is ready' 
-                          : isInitialized
-                            ? 'Calibrating automatically... Look at the screen naturally'
-                            : 'Waiting for initialization...'
-                        }
-                      </p>
-                    </div>
-                  </div>
+                  )}
 
-                  {/* Step 3: Start Experiment */}
-                  <div className="flex items-center space-x-2 p-2 bg-gray-50 rounded-lg">
-                    <div className="flex-shrink-0">
-                      {isTracking ? (
-                        <div className="h-4 w-4 rounded-full bg-primary-500 animate-pulse" />
-                      ) : isCalibrated ? (
+                  {/* Step 3: Start Experiment - Show when calibrated but not tracking */}
+                  {isCalibrated && !isTracking && (
+                    <div className="flex items-center space-x-2 p-2 bg-gray-50 rounded-lg">
+                      <div className="flex-shrink-0">
                         <div className="h-4 w-4 rounded-full border-2 border-primary-500" />
-                      ) : (
-                        <div className="h-4 w-4 rounded-full border-2 border-gray-300" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-medium text-gray-900 text-xs">
-                        3. Start {EYE_TRACKING_EXPERIMENT.DURATION_SECONDS}-Second Session
-                      </h3>
-                      <p className="text-xs text-gray-600">
-                        {isTracking 
-                          ? 'Look at the image naturally - we\'re tracking where your eyes go' 
-                          : isCalibrated 
-                            ? `Ready to start - look at the image naturally for ${EYE_TRACKING_EXPERIMENT.DURATION_SECONDS} seconds`
-                            : 'Complete calibration first'
-                        }
-                      </p>
-                    </div>
-                    {isCalibrated && !isTracking && (
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-medium text-gray-900 text-xs">
+                          3. Start {EYE_TRACKING_EXPERIMENT.DURATION_SECONDS}-Second Session
+                        </h3>
+                        <p className="text-xs text-gray-600">
+                          Ready to start - look at the image naturally for {EYE_TRACKING_EXPERIMENT.DURATION_SECONDS} seconds
+                        </p>
+                      </div>
                       <button
                         onClick={startTracking}
                         className="btn btn-primary btn-sm text-xs px-2 py-1"
@@ -623,20 +600,22 @@ export function EyeTrackingExperiment() {
                         <Play className="h-3 w-3 mr-1" />
                         Start
                       </button>
-                    )}
-                  </div>
+                    </div>
+                  )}
 
                   {/* Webcam Status */}
                   <div className="flex items-center space-x-2 p-2 bg-blue-50 rounded-lg">
                     <Camera className="h-4 w-4 text-blue-500" />
                     <div className="flex-1 min-w-0">
                       <h3 className="font-medium text-blue-900 text-xs">
-                        Webcam Status
+                        {isTracking ? 'Tracking Active' : 'Webcam Status'}
                       </h3>
                       <p className="text-xs text-blue-700">
-                        {webcamPermission 
-                          ? 'Webcam access granted' 
-                          : 'Requesting webcam permission...'
+                        {isTracking 
+                          ? `Tracking your eye movements - ${timeRemaining}s remaining`
+                          : webcamPermission 
+                            ? 'Webcam access granted' 
+                            : 'Requesting webcam permission...'
                         }
                       </p>
                     </div>

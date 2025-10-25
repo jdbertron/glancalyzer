@@ -490,49 +490,37 @@ export function EyeTrackingModal({
               {/* Controls - Sticky at bottom */}
               <div className="space-y-4 bg-white border-t pt-4">
                 <div className="space-y-4">
-                  {/* Step 1: Initialize */}
-                  <div className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg">
-                    <div className="flex-shrink-0">
-                      {isInitialized ? (
-                        <CheckCircle className="h-6 w-6 text-green-500" />
-                      ) : (
+                  {/* Step 1: Initialize - Hide once completed */}
+                  {!isInitialized && (
+                    <div className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg">
+                      <div className="flex-shrink-0">
                         <div className="h-6 w-6 rounded-full border-2 border-gray-300" />
-                      )}
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="font-medium text-gray-900">
+                          1. Initialize Eye Tracking
+                        </h3>
+                        <p className="text-sm text-gray-600">
+                          Setting up eye tracking system...
+                        </p>
+                      </div>
                     </div>
-                    <div className="flex-1">
-                      <h3 className="font-medium text-gray-900">
-                        1. Initialize Eye Tracking
-                      </h3>
-                      <p className="text-sm text-gray-600">
-                        {isInitialized 
-                          ? 'WebGazer initialized successfully' 
-                          : 'Setting up eye tracking system...'
-                        }
-                      </p>
-                    </div>
-                  </div>
+                  )}
 
-                  {/* Step 2: Calibrate */}
-                  <div className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg">
-                    <div className="flex-shrink-0">
-                      {isCalibrated ? (
-                        <CheckCircle className="h-6 w-6 text-green-500" />
-                      ) : (
+                  {/* Step 2: Calibrate - Hide once completed */}
+                  {isInitialized && !isCalibrated && (
+                    <div className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg">
+                      <div className="flex-shrink-0">
                         <div className="h-6 w-6 rounded-full border-2 border-gray-300" />
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <h3 className="font-medium text-gray-900">
-                        2. Calibrate System
-                      </h3>
-                      <p className="text-sm text-gray-600">
-                        {isCalibrated 
-                          ? 'Calibration complete - system is ready' 
-                          : 'Click calibrate, then look at the screen and move your mouse around for 3 seconds'
-                        }
-                      </p>
-                    </div>
-                    {!isCalibrated && isInitialized && (
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="font-medium text-gray-900">
+                          2. Calibrate System
+                        </h3>
+                        <p className="text-sm text-gray-600">
+                          Click calibrate, then look at the screen and move your mouse around for 3 seconds
+                        </p>
+                      </div>
                       <button
                         onClick={startCalibration}
                         className="btn btn-primary btn-sm"
@@ -540,34 +528,23 @@ export function EyeTrackingModal({
                         <Eye className="h-4 w-4 mr-2" />
                         Calibrate
                       </button>
-                    )}
-                  </div>
+                    </div>
+                  )}
 
-                  {/* Step 3: Start Experiment */}
-                  <div className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg">
-                    <div className="flex-shrink-0">
-                      {isTracking ? (
-                        <div className="h-6 w-6 rounded-full bg-primary-500 animate-pulse" />
-                      ) : isCalibrated ? (
+                  {/* Step 3: Start Experiment - Hide once tracking starts */}
+                  {isCalibrated && !isTracking && (
+                    <div className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg">
+                      <div className="flex-shrink-0">
                         <div className="h-6 w-6 rounded-full border-2 border-primary-500" />
-                      ) : (
-                        <div className="h-6 w-6 rounded-full border-2 border-gray-300" />
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <h3 className="font-medium text-gray-900">
-                        3. Start 30-Second Session
-                      </h3>
-                      <p className="text-sm text-gray-600">
-                        {isTracking 
-                          ? 'Tracking your eye movements...' 
-                          : isCalibrated 
-                            ? 'Ready to start the experiment'
-                            : 'Complete calibration first'
-                        }
-                      </p>
-                    </div>
-                    {isCalibrated && !isTracking && (
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="font-medium text-gray-900">
+                          3. Start 30-Second Session
+                        </h3>
+                        <p className="text-sm text-gray-600">
+                          Ready to start the experiment
+                        </p>
+                      </div>
                       <button
                         onClick={startTracking}
                         className="btn btn-primary"
@@ -575,8 +552,8 @@ export function EyeTrackingModal({
                         <Play className="h-4 w-4 mr-2" />
                         Start Experiment
                       </button>
-                    )}
-                  </div>
+                    </div>
+                  )}
 
                   {/* Webcam Status */}
                   <div className="flex items-center space-x-4 p-4 bg-blue-50 rounded-lg">

@@ -5,7 +5,7 @@
 // Eye Tracking Experiment Settings
 export const EYE_TRACKING_EXPERIMENT = {
   // Duration of the eye tracking session in seconds
-  DURATION_SECONDS: 30,
+  DURATION_SECONDS: 15,
   
   // Maximum number of gaze points to store in memory
   MAX_GAZE_POINTS: 10000,

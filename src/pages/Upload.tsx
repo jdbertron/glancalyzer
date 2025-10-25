@@ -29,6 +29,9 @@ export function Upload() {
   const uploadedImageUrl = useQuery(api.pictures.getImageUrl, 
     uploadedPicture?.fileId ? { fileId: uploadedPicture.fileId } : 'skip'
   )
+  const pictureExperiments = useQuery(api.experiments.getPictureExperiments, 
+    uploadedPictureId ? { pictureId: uploadedPictureId as any } : 'skip'
+  )
 
   // Debug logging
   console.log('Upload state:', { uploadedPictureId, uploadedPicture, uploadedImageUrl })
@@ -311,17 +314,6 @@ export function Upload() {
                   </div>
                 </div>
                 
-                {/* View Experiments for This Picture */}
-                <div className="mb-4">
-                  <button
-                    onClick={() => navigate(`/picture-experiments?pictureId=${uploadedPictureId}`)}
-                    className="btn btn-outline btn-lg w-full flex items-center justify-center space-x-2"
-                  >
-                    <BarChart3 className="h-5 w-5" />
-                    <span>View Experiments for This Picture</span>
-                  </button>
-                </div>
-                
                 {/* Main Action - Eye Tracking */}
                 <div className="mb-4">
                   <button
@@ -333,9 +325,25 @@ export function Upload() {
                   </button>
                 </div>
                 
+                {/* View Experiments for This Picture */}
+                <div className="mb-4">
+                  <button
+                    onClick={() => navigate(`/picture-experiments?pictureId=${uploadedPictureId}`)}
+                    disabled={!pictureExperiments || pictureExperiments.length === 0}
+                    className={`btn btn-lg w-full flex items-center justify-center space-x-2 ${
+                      !pictureExperiments || pictureExperiments.length === 0
+                        ? 'btn-outline opacity-50 cursor-not-allowed'
+                        : 'btn-outline'
+                    }`}
+                  >
+                    <BarChart3 className="h-5 w-5" />
+                    <span>View Experiments for This Picture</span>
+                  </button>
+                </div>
+                
                 <div className="text-sm text-gray-500 space-y-1">
                   <p>• <strong>Analyze Focus Areas:</strong> Track where your eyes look for 30 seconds</p>
-                  <p>• <strong>View Experiments:</strong> See all your analysis results</p>
+                  <p>• <strong>View Experiments:</strong> See all your analysis results {(!pictureExperiments || pictureExperiments.length === 0) && '(no experiments yet)'}</p>
                   <p className="text-xs text-gray-400 mt-2">
                     Eye tracking requires webcam access and works best in good lighting
                   </p>
