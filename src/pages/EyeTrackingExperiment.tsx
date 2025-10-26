@@ -78,10 +78,10 @@ export function EyeTrackingExperiment() {
     try {
       // Dynamically import WebGazer
       const webgazerModule = await import('webgazer')
-      const wg = webgazerModule.default || webgazerModule
+      const wg = webgazerModule.default || webgazerModule as any
       
       // Initialize WebGazer
-      await wg.setRegression('ridge')
+      wg.setRegression('ridge')
         .setTracker('TFFacemesh')
         .setGazeListener((data: any, clock: any) => {
           if (data && isTracking) {
@@ -103,9 +103,10 @@ export function EyeTrackingExperiment() {
           }
         })
         .saveDataAcrossSessions(true)
-        .showVideoPreview(true) // Show webcam for debugging
-        .showPredictionPoints(false) // Hide prediction points initially
-        .begin()
+      
+      await wg.showVideoPreview(true) // Show webcam for debugging
+      await wg.showPredictionPoints(false) // Hide prediction points initially
+      await wg.begin()
         
       // Style the video preview to be more visible and better positioned
       setTimeout(() => {
@@ -237,18 +238,79 @@ export function EyeTrackingExperiment() {
     
     // Clean up WebGazer and stop webcam
     try {
+      console.log(`🛑 [${callId}] Starting WebGazer cleanup...`)
+      
+      // Pause WebGazer first
       await webgazer.pause()
+      console.log(`🛑 [${callId}] WebGazer paused`)
+      
+      // Hide video preview and prediction points
       await webgazer.showVideoPreview(false)
       await webgazer.showPredictionPoints(false)
-      await webgazer.end() // Properly end WebGazer session
+      console.log(`🛑 [${callId}] WebGazer UI elements hidden`)
       
-      // Force hide the video element
-      const videoElement = document.querySelector('video') as HTMLVideoElement
-      if (videoElement) {
+      // End the WebGazer session completely
+      await webgazer.end()
+      console.log(`🛑 [${callId}] WebGazer session ended`)
+      
+      // Find and stop all video streams
+      const videoElements = document.querySelectorAll('video') as NodeListOf<HTMLVideoElement>
+      videoElements.forEach((videoElement, index) => {
+        console.log(`🛑 [${callId}] Processing video element ${index + 1}/${videoElements.length}`)
+        
+        // Stop all tracks in the video stream
+        if (videoElement.srcObject) {
+          const stream = videoElement.srcObject as MediaStream
+          const tracks = stream.getTracks()
+          console.log(`🛑 [${callId}] Found ${tracks.length} tracks in video stream`)
+          
+          tracks.forEach((track, trackIndex) => {
+            console.log(`🛑 [${callId}] Stopping track ${trackIndex + 1}: ${track.kind}`)
+            track.stop()
+          })
+          
+          // Clear the srcObject
+          videoElement.srcObject = null
+        }
+        
+        // Hide the video element
         videoElement.style.display = 'none'
+        videoElement.style.visibility = 'hidden'
+        console.log(`🛑 [${callId}] Video element ${index + 1} hidden and stream cleared`)
+      })
+      
+      // Also try to stop any remaining media streams
+      if (navigator.mediaDevices) {
+        // This is a fallback to ensure all streams are stopped
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices()
+          console.log(`🛑 [${callId}] Found ${devices.length} media devices`)
+        } catch (e) {
+          console.log(`🛑 [${callId}] Could not enumerate devices:`, e)
+        }
       }
+      
+      console.log(`✅ [${callId}] WebGazer cleanup completed successfully`)
+      
     } catch (error) {
-      console.error('Error stopping WebGazer:', error)
+      console.error(`❌ [${callId}] Error stopping WebGazer:`, error)
+      
+      // Fallback cleanup - force stop all video elements
+      const videoElements = document.querySelectorAll('video') as NodeListOf<HTMLVideoElement>
+      videoElements.forEach((videoElement, index) => {
+        try {
+          if (videoElement.srcObject) {
+            const stream = videoElement.srcObject as MediaStream
+            stream.getTracks().forEach(track => track.stop())
+            videoElement.srcObject = null
+          }
+          videoElement.style.display = 'none'
+          videoElement.style.visibility = 'hidden'
+          console.log(`🛑 [${callId}] Fallback cleanup for video element ${index + 1}`)
+        } catch (fallbackError) {
+          console.error(`❌ [${callId}] Fallback cleanup failed for video element ${index + 1}:`, fallbackError)
+        }
+      })
     }
     
     const sessionDuration = Date.now() - (sessionStartTime || Date.now())
@@ -423,24 +485,57 @@ export function EyeTrackingExperiment() {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      console.log('🧹 Component unmounting - starting cleanup')
+      
       if (intervalRef.current) {
         clearInterval(intervalRef.current)
+        console.log('🧹 Timer interval cleared')
       }
+      
       if (webgazer) {
         try {
+          console.log('🧹 Cleaning up WebGazer on unmount')
           webgazer.pause()
           webgazer.showVideoPreview(false)
           webgazer.showPredictionPoints(false)
           webgazer.end()
-          
-          // Force hide the video element
-          const videoElement = document.querySelector('video') as HTMLVideoElement
-          if (videoElement) {
-            videoElement.style.display = 'none'
-          }
+          console.log('🧹 WebGazer cleanup completed')
         } catch (error) {
-          console.error('Error cleaning up WebGazer:', error)
+          console.error('❌ Error cleaning up WebGazer on unmount:', error)
         }
+      }
+      
+      // Comprehensive video stream cleanup
+      try {
+        const videoElements = document.querySelectorAll('video') as NodeListOf<HTMLVideoElement>
+        console.log(`🧹 Found ${videoElements.length} video elements to cleanup`)
+        
+        videoElements.forEach((videoElement, index) => {
+          try {
+            if (videoElement.srcObject) {
+              const stream = videoElement.srcObject as MediaStream
+              const tracks = stream.getTracks()
+              console.log(`🧹 Stopping ${tracks.length} tracks in video element ${index + 1}`)
+              
+              tracks.forEach(track => {
+                track.stop()
+                console.log(`🧹 Stopped ${track.kind} track`)
+              })
+              
+              videoElement.srcObject = null
+            }
+            
+            videoElement.style.display = 'none'
+            videoElement.style.visibility = 'hidden'
+            console.log(`🧹 Video element ${index + 1} cleaned up`)
+          } catch (videoError) {
+            console.error(`❌ Error cleaning up video element ${index + 1}:`, videoError)
+          }
+        })
+        
+        console.log('✅ Component unmount cleanup completed')
+      } catch (cleanupError) {
+        console.error('❌ Error during component unmount cleanup:', cleanupError)
       }
     }
   }, [webgazer])

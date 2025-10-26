@@ -50,7 +50,7 @@ export function EyeTrackingModal({
   const [webcamPermission, setWebcamPermission] = useState(false)
   const [gazeData, setGazeData] = useState<GazePoint[]>([])
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null)
-  const [timeRemaining, setTimeRemaining] = useState(EYE_TRACKING_EXPERIMENT.DURATION_SECONDS)
+  const [timeRemaining, setTimeRemaining] = useState<number>(EYE_TRACKING_EXPERIMENT.DURATION_SECONDS)
   const [showResults, setShowResults] = useState(false)
   
   // Refs
@@ -68,10 +68,10 @@ export function EyeTrackingModal({
     try {
       // Dynamically import WebGazer
       const webgazerModule = await import('webgazer')
-      const wg = webgazerModule.default || webgazerModule
+      const wg = webgazerModule.default || webgazerModule as any
       
       // Initialize WebGazer
-      await wg.setRegression('ridge')
+      wg.setRegression('ridge')
         .setTracker('TFFacemesh')
         .setGazeListener((data: any, clock: any) => {
           if (data && isTracking) {
@@ -85,9 +85,10 @@ export function EyeTrackingModal({
           }
         })
         .saveDataAcrossSessions(true)
-        .showVideoPreview(false) // Hide webcam initially
-        .showPredictionPoints(false) // Hide prediction points completely
-        .begin()
+      
+      await wg.showVideoPreview(false) // Hide webcam initially
+      await wg.showPredictionPoints(false) // Hide prediction points completely
+      await wg.begin()
       
       setWebgazer(wg)
       setIsInitialized(true)
@@ -133,31 +134,95 @@ export function EyeTrackingModal({
 
   // Stop tracking session
   const stopTracking = useCallback(async () => {
-    console.log('🛑 stopTracking called')
-    console.log('🛑 Current state:', { webgazer: !!webgazer, isTracking })
+    const callId = Math.random().toString(36).substring(2, 15)
+    const timestamp = new Date().toISOString()
+    
+    console.log(`🛑 [${callId}] stopTracking called at ${timestamp}`)
+    console.log(`🛑 [${callId}] Current state:`, { webgazer: !!webgazer, isTracking })
     
     if (!webgazer || !isTracking) {
-      console.log('🚫 stopTracking prevented - not tracking or no webgazer')
+      console.log(`🚫 [${callId}] stopTracking prevented - not tracking or no webgazer`)
       return
     }
     
-    console.log('✅ stopTracking proceeding')
+    console.log(`✅ [${callId}] stopTracking proceeding`)
     setIsTracking(false)
     
     // Clean up WebGazer and stop webcam
     try {
+      console.log(`🛑 [${callId}] Starting WebGazer cleanup...`)
+      
+      // Pause WebGazer first
       await webgazer.pause()
+      console.log(`🛑 [${callId}] WebGazer paused`)
+      
+      // Hide video preview and prediction points
       await webgazer.showVideoPreview(false)
       await webgazer.showPredictionPoints(false)
-      await webgazer.end() // Properly end WebGazer session
+      console.log(`🛑 [${callId}] WebGazer UI elements hidden`)
       
-      // Force hide the video element
-      const videoElement = document.querySelector('video') as HTMLVideoElement
-      if (videoElement) {
+      // End the WebGazer session completely
+      await webgazer.end()
+      console.log(`🛑 [${callId}] WebGazer session ended`)
+      
+      // Find and stop all video streams
+      const videoElements = document.querySelectorAll('video') as NodeListOf<HTMLVideoElement>
+      videoElements.forEach((videoElement, index) => {
+        console.log(`🛑 [${callId}] Processing video element ${index + 1}/${videoElements.length}`)
+        
+        // Stop all tracks in the video stream
+        if (videoElement.srcObject) {
+          const stream = videoElement.srcObject as MediaStream
+          const tracks = stream.getTracks()
+          console.log(`🛑 [${callId}] Found ${tracks.length} tracks in video stream`)
+          
+          tracks.forEach((track, trackIndex) => {
+            console.log(`🛑 [${callId}] Stopping track ${trackIndex + 1}: ${track.kind}`)
+            track.stop()
+          })
+          
+          // Clear the srcObject
+          videoElement.srcObject = null
+        }
+        
+        // Hide the video element
         videoElement.style.display = 'none'
+        videoElement.style.visibility = 'hidden'
+        console.log(`🛑 [${callId}] Video element ${index + 1} hidden and stream cleared`)
+      })
+      
+      // Also try to stop any remaining media streams
+      if (navigator.mediaDevices) {
+        // This is a fallback to ensure all streams are stopped
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices()
+          console.log(`🛑 [${callId}] Found ${devices.length} media devices`)
+        } catch (e) {
+          console.log(`🛑 [${callId}] Could not enumerate devices:`, e)
+        }
       }
+      
+      console.log(`✅ [${callId}] WebGazer cleanup completed successfully`)
+      
     } catch (error) {
-      console.error('Error stopping WebGazer:', error)
+      console.error(`❌ [${callId}] Error stopping WebGazer:`, error)
+      
+      // Fallback cleanup - force stop all video elements
+      const videoElements = document.querySelectorAll('video') as NodeListOf<HTMLVideoElement>
+      videoElements.forEach((videoElement, index) => {
+        try {
+          if (videoElement.srcObject) {
+            const stream = videoElement.srcObject as MediaStream
+            stream.getTracks().forEach(track => track.stop())
+            videoElement.srcObject = null
+          }
+          videoElement.style.display = 'none'
+          videoElement.style.visibility = 'hidden'
+          console.log(`🛑 [${callId}] Fallback cleanup for video element ${index + 1}`)
+        } catch (fallbackError) {
+          console.error(`❌ [${callId}] Fallback cleanup failed for video element ${index + 1}:`, fallbackError)
+        }
+      })
     }
     
     const sessionDuration = Date.now() - (sessionStartTime || Date.now())
@@ -351,22 +416,98 @@ export function EyeTrackingModal({
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      console.log('🧹 EyeTrackingModal unmounting - starting cleanup')
+      
       if (webgazer) {
         try {
+          console.log('🧹 Cleaning up WebGazer on modal unmount')
           webgazer.pause()
           webgazer.showVideoPreview(false)
           webgazer.showPredictionPoints(false)
           webgazer.end()
-          
-          // Force hide the video element
-          const videoElement = document.querySelector('video') as HTMLVideoElement
-          if (videoElement) {
-            videoElement.style.display = 'none'
-          }
+          console.log('🧹 WebGazer cleanup completed')
         } catch (error) {
-          console.error('Error cleaning up WebGazer:', error)
+          console.error('❌ Error cleaning up WebGazer on modal unmount:', error)
         }
       }
+      
+      // Comprehensive video stream cleanup
+      try {
+        const videoElements = document.querySelectorAll('video') as NodeListOf<HTMLVideoElement>
+        console.log(`🧹 Found ${videoElements.length} video elements to cleanup in modal`)
+        
+        videoElements.forEach((videoElement, index) => {
+          try {
+            if (videoElement.srcObject) {
+              const stream = videoElement.srcObject as MediaStream
+              const tracks = stream.getTracks()
+              console.log(`🧹 Stopping ${tracks.length} tracks in video element ${index + 1}`)
+              
+              tracks.forEach(track => {
+                track.stop()
+                console.log(`🧹 Stopped ${track.kind} track`)
+              })
+              
+              videoElement.srcObject = null
+            }
+            
+            videoElement.style.display = 'none'
+            videoElement.style.visibility = 'hidden'
+            console.log(`🧹 Video element ${index + 1} cleaned up`)
+          } catch (videoError) {
+            console.error(`❌ Error cleaning up video element ${index + 1}:`, videoError)
+          }
+        })
+        
+        console.log('✅ EyeTrackingModal unmount cleanup completed')
+      } catch (cleanupError) {
+        console.error('❌ Error during modal unmount cleanup:', cleanupError)
+      }
+    }
+  }, [webgazer])
+
+  // Cleanup function for immediate cleanup when modal closes
+  const cleanupWebGazer = useCallback(async () => {
+    console.log('🧹 Immediate cleanup requested')
+    
+    if (webgazer) {
+      try {
+        console.log('🧹 Cleaning up WebGazer immediately')
+        await webgazer.pause()
+        await webgazer.showVideoPreview(false)
+        await webgazer.showPredictionPoints(false)
+        await webgazer.end()
+        console.log('🧹 WebGazer immediate cleanup completed')
+      } catch (error) {
+        console.error('❌ Error in immediate WebGazer cleanup:', error)
+      }
+    }
+    
+    // Clean up all video streams immediately
+    try {
+      const videoElements = document.querySelectorAll('video') as NodeListOf<HTMLVideoElement>
+      console.log(`🧹 Immediate cleanup of ${videoElements.length} video elements`)
+      
+      videoElements.forEach((videoElement, index) => {
+        try {
+          if (videoElement.srcObject) {
+            const stream = videoElement.srcObject as MediaStream
+            stream.getTracks().forEach(track => {
+              track.stop()
+              console.log(`🧹 Immediately stopped ${track.kind} track`)
+            })
+            videoElement.srcObject = null
+          }
+          videoElement.style.display = 'none'
+          videoElement.style.visibility = 'hidden'
+        } catch (videoError) {
+          console.error(`❌ Error in immediate video cleanup ${index + 1}:`, videoError)
+        }
+      })
+      
+      console.log('✅ Immediate cleanup completed')
+    } catch (cleanupError) {
+      console.error('❌ Error during immediate cleanup:', cleanupError)
     }
   }, [webgazer])
 
@@ -376,6 +517,14 @@ export function EyeTrackingModal({
       initializeWebGazer()
     }
   }, [isOpen, initializeWebGazer])
+
+  // Cleanup when modal closes
+  useEffect(() => {
+    if (!isOpen && webgazer) {
+      console.log('🧹 Modal closed - triggering immediate cleanup')
+      cleanupWebGazer()
+    }
+  }, [isOpen, webgazer, cleanupWebGazer])
 
   if (!isOpen) return null
 
@@ -415,7 +564,11 @@ export function EyeTrackingModal({
           )}
           
           <button
-            onClick={onClose}
+            onClick={async () => {
+              console.log('🛑 Close button clicked - triggering cleanup')
+              await cleanupWebGazer()
+              onClose()
+            }}
             className="text-gray-400 hover:text-gray-600"
           >
             <X className="h-6 w-6" />
@@ -508,7 +661,7 @@ export function EyeTrackingModal({
                       </div>
                       <div className="flex-1">
                         <h3 className="font-medium text-gray-900">
-                          3. Start 30-Second Session
+                          3. Start {EYE_TRACKING_EXPERIMENT.DURATION_SECONDS}-Second Session
                         </h3>
                         <p className="text-sm text-gray-600">
                           Ready to start the experiment
@@ -562,13 +715,21 @@ export function EyeTrackingModal({
               </div>
               <div className="space-x-4">
                 <button
-                  onClick={onClose}
+                  onClick={async () => {
+                    console.log('🛑 View Results button clicked - triggering cleanup')
+                    await cleanupWebGazer()
+                    onClose()
+                  }}
                   className="btn btn-primary"
                 >
                   View Results
                 </button>
                 <button
-                  onClick={() => setShowResults(false)}
+                  onClick={async () => {
+                    console.log('🛑 Run Another Analysis button clicked - triggering cleanup')
+                    await cleanupWebGazer()
+                    setShowResults(false)
+                  }}
                   className="btn btn-outline"
                 >
                   Run Another Analysis
