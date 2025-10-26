@@ -240,7 +240,6 @@ export function EyeTrackingResults({
               {activeTab === 'scanpath' && 'Scan Path - Eye movement trajectory over time'}
               {activeTab === 'fixations' && 'Fixations - Focus points with duration analysis'}
               {activeTab === 'stats' && 'Statistics - Numerical metrics and session data'}
-              }
             </div>
           </div>
           <div className="card-content">

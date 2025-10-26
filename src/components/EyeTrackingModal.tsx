@@ -15,6 +15,7 @@ import {
   Clock
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { EYE_TRACKING_EXPERIMENT } from '../constants'
 
 // WebGazer types
 interface GazePoint {
@@ -49,14 +50,14 @@ export function EyeTrackingModal({
   const [webcamPermission, setWebcamPermission] = useState(false)
   const [gazeData, setGazeData] = useState<GazePoint[]>([])
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null)
-  const [timeRemaining, setTimeRemaining] = useState(30)
+  const [timeRemaining, setTimeRemaining] = useState(EYE_TRACKING_EXPERIMENT.DURATION_SECONDS)
   const [showResults, setShowResults] = useState(false)
   
   // Refs
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const imageRef = useRef<HTMLImageElement>(null)
-  const intervalRef = useRef<NodeJS.Timeout | null>(null)
+  const autoStopTriggeredRef = useRef(false)
   
   // Convex mutations
   const createExperiment = useMutation(api.experiments.createExperiment)
@@ -130,98 +131,18 @@ export function EyeTrackingModal({
     }
   }, [webgazer])
 
-  // Start tracking session
-  const startTracking = useCallback(() => {
-    if (!webgazer || !isCalibrated) return
-    
-    setGazeData([])
-    setSessionStartTime(Date.now())
-    setIsTracking(true)
-    setTimeRemaining(30)
-    
-    // Start countdown timer
-    intervalRef.current = setInterval(() => {
-      setTimeRemaining(prev => {
-        if (prev <= 1) {
-          // Auto-stop when timer reaches 0
-          clearInterval(intervalRef.current!)
-          setIsTracking(false)
-          
-          // Clean up WebGazer and stop webcam
-          if (webgazer) {
-            try {
-              webgazer.pause()
-              webgazer.showVideoPreview(false)
-              webgazer.showPredictionPoints(false)
-              webgazer.end()
-              
-              // Force hide the video element
-              const videoElement = document.querySelector('video') as HTMLVideoElement
-              if (videoElement) {
-                videoElement.style.display = 'none'
-              }
-            } catch (error) {
-              console.error('Error stopping WebGazer:', error)
-            }
-          }
-          
-          // Process results
-          const sessionDuration = Date.now() - (sessionStartTime || Date.now())
-          const processedData = processGazeData(gazeData, sessionDuration)
-          
-          // Always show results first
-          console.log('Showing results immediately')
-          setShowResults(true)
-          toast.success('Eye tracking session completed!')
-          
-          // Try to save to database in background
-          createExperiment({
-            pictureId: pictureId as any,
-            userId: userId || undefined,
-            experimentType: 'Eye Tracking',
-            parameters: {
-              sessionDuration,
-              gazePointCount: gazeData.length
-            }
-          }).then(experimentId => {
-            updateEyeTrackingResults({
-              experimentId: experimentId.experimentId,
-              eyeTrackingData: processedData,
-              status: 'completed'
-            }).then(() => {
-              console.log('Experiment saved successfully')
-            }).catch(error => {
-              console.error('Failed to save experiment:', error)
-            })
-          }).catch(error => {
-            console.error('Failed to create experiment:', error)
-          })
-          
-          // Call completion callback
-          onComplete(processedData)
-          
-          return 0
-        }
-        return prev - 1
-      })
-    }, 1000)
-    
-    // Ensure prediction points stay hidden
-    if (webgazer) {
-      webgazer.showPredictionPoints(false)
-    }
-    
-    toast.success('Eye tracking started! Look at the image naturally.')
-  }, [webgazer, isCalibrated])
-
   // Stop tracking session
   const stopTracking = useCallback(async () => {
-    if (!webgazer || !isTracking) return
+    console.log('🛑 stopTracking called')
+    console.log('🛑 Current state:', { webgazer: !!webgazer, isTracking })
     
-    setIsTracking(false)
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current)
+    if (!webgazer || !isTracking) {
+      console.log('🚫 stopTracking prevented - not tracking or no webgazer')
+      return
     }
+    
+    console.log('✅ stopTracking proceeding')
+    setIsTracking(false)
     
     // Clean up WebGazer and stop webcam
     try {
@@ -263,6 +184,7 @@ export function EyeTrackingModal({
         status: 'completed'
       })
       
+      console.log('📊 Setting showResults to true')
       setShowResults(true)
       toast.success('Eye tracking session completed!')
       
@@ -272,8 +194,58 @@ export function EyeTrackingModal({
     } catch (error) {
       console.error('Failed to save experiment:', error)
       toast.error('Failed to save experiment results.')
+      // Still show results even if saving failed
+      console.log('📊 Setting showResults to true (error case)')
+      setShowResults(true)
     }
-  }, [webgazer, isTracking, sessionStartTime, gazeData, pictureId, userId, createExperiment, updateEyeTrackingResults, onComplete])
+  }, [webgazer, sessionStartTime, gazeData, pictureId, userId, createExperiment, updateEyeTrackingResults, onComplete])
+
+  // Start tracking session
+  const startTracking = useCallback(() => {
+    if (!webgazer || !isCalibrated) return
+    
+    setGazeData([])
+    setSessionStartTime(Date.now())
+    setIsTracking(true)
+    setTimeRemaining(EYE_TRACKING_EXPERIMENT.DURATION_SECONDS)
+    autoStopTriggeredRef.current = false // Reset auto-stop flag
+    
+    // Ensure prediction points stay hidden
+    if (webgazer) {
+      webgazer.showPredictionPoints(false)
+    }
+    
+    toast.success('Eye tracking started! Look at the image naturally.')
+  }, [webgazer, isCalibrated])
+
+  // Timer effect - standard React pattern
+  useEffect(() => {
+    if (!isTracking || timeRemaining <= 0) return
+
+    const intervalId = setInterval(() => {
+      setTimeRemaining(prev => {
+        if (prev <= 1) {
+          // Check if we've already triggered auto-stop to prevent duplicates
+          if (autoStopTriggeredRef.current) {
+            console.log('⏰ Timer auto-stop already triggered, skipping')
+            return 0
+          }
+          
+          console.log('⏰ Timer auto-stop triggered')
+          autoStopTriggeredRef.current = true
+          
+          // Call stopTracking directly without dependency
+          stopTracking().catch(error => {
+            console.error('Error in timer auto-stop:', error)
+          })
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+
+    return () => clearInterval(intervalId)
+  }, [isTracking, timeRemaining]) // Removed stopTracking from dependencies
 
   // Process gaze data into fixations and scan path
   const processGazeData = (gazePoints: GazePoint[], duration: number) => {
@@ -379,9 +351,6 @@ export function EyeTrackingModal({
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current)
-      }
       if (webgazer) {
         try {
           webgazer.pause()

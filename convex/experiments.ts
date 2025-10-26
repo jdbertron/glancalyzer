@@ -15,9 +15,37 @@ export const createExperiment = mutation({
     message: v.string(),
   }),
   handler: async (ctx, args) => {
+    const callId = Math.random().toString(36).substring(2, 15)
+    const timestamp = new Date().toISOString()
+    
+    console.log(`🔧 [${callId}] createExperiment called at ${timestamp}`)
+    console.log(`🔧 [${callId}] Args:`, {
+      pictureId: args.pictureId,
+      userId: args.userId,
+      experimentType: args.experimentType,
+      parameters: args.parameters
+    })
+    
+    // Check for existing experiments for this picture
+    const existingExperiments = await ctx.db
+      .query("experiments")
+      .withIndex("by_picture", (q) => q.eq("pictureId", args.pictureId))
+      .collect();
+    
+    console.log(`🔍 [${callId}] Found ${existingExperiments.length} existing experiments for this picture`)
+    if (existingExperiments.length > 0) {
+      console.log(`🔍 [${callId}] Existing experiments:`, existingExperiments.map(exp => ({
+        id: exp._id,
+        type: exp.experimentType,
+        status: exp.status,
+        createdAt: new Date(exp.createdAt).toISOString()
+      })))
+    }
+    
     // Check if picture exists and user has access
     const picture = await ctx.db.get(args.pictureId);
     if (!picture) {
+      console.log(`❌ [${callId}] Picture not found:`, args.pictureId)
       throw new Error("Picture not found");
     }
 
@@ -58,6 +86,7 @@ export const createExperiment = mutation({
       }
     }
 
+    console.log(`📝 [${callId}] Inserting experiment into database...`)
     const experimentId = await ctx.db.insert("experiments", {
       pictureId: args.pictureId,
       userId: args.userId,
@@ -66,6 +95,8 @@ export const createExperiment = mutation({
       status: "pending",
       createdAt: Date.now(),
     });
+    
+    console.log(`✅ [${callId}] Experiment inserted with ID:`, experimentId)
 
     // Update user's experiment count
     if (args.userId) {
@@ -323,5 +354,118 @@ export const getExperiment = query({
     }
 
     return experiment;
+  },
+});
+
+// Debug query to see experiments for a picture with details
+export const debugPictureExperiments = query({
+  args: {
+    pictureId: v.id("pictures"),
+  },
+  returns: v.array(
+    v.object({
+      _id: v.id("experiments"),
+      _creationTime: v.number(),
+      pictureId: v.id("pictures"),
+      userId: v.optional(v.id("users")),
+      experimentType: v.string(),
+      status: v.union(
+        v.literal("pending"),
+        v.literal("processing"),
+        v.literal("completed"),
+        v.literal("failed")
+      ),
+      createdAt: v.number(),
+      completedAt: v.optional(v.number()),
+      hasEyeTrackingData: v.boolean(),
+      gazePointCount: v.optional(v.number()),
+    })
+  ),
+  handler: async (ctx, args) => {
+    const experiments = await ctx.db
+      .query("experiments")
+      .withIndex("by_picture", (q) => q.eq("pictureId", args.pictureId))
+      .order("desc")
+      .collect();
+
+    return experiments.map(exp => ({
+      _id: exp._id,
+      _creationTime: exp._creationTime,
+      pictureId: exp.pictureId,
+      userId: exp.userId,
+      experimentType: exp.experimentType,
+      status: exp.status,
+      createdAt: exp.createdAt,
+      completedAt: exp.completedAt,
+      hasEyeTrackingData: !!exp.eyeTrackingData,
+      gazePointCount: exp.eyeTrackingData?.gazePoints?.length || 0,
+    }));
+  },
+});
+
+// Clean up duplicate experiments for a picture (keep only the most recent)
+export const cleanupDuplicateExperiments = mutation({
+  args: {
+    pictureId: v.id("pictures"),
+  },
+  returns: v.object({
+    deletedCount: v.number(),
+    keptExperimentId: v.optional(v.id("experiments")),
+    message: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    // Get all experiments for this picture
+    const experiments = await ctx.db
+      .query("experiments")
+      .withIndex("by_picture", (q) => q.eq("pictureId", args.pictureId))
+      .order("desc")
+      .collect();
+
+    if (experiments.length <= 1) {
+      return {
+        deletedCount: 0,
+        keptExperimentId: experiments[0]?._id,
+        message: "No duplicates found",
+      };
+    }
+
+    // Group experiments by type and user
+    const groupedExperiments = new Map<string, typeof experiments>();
+    
+    experiments.forEach(exp => {
+      const key = `${exp.experimentType}-${exp.userId || 'anonymous'}`;
+      if (!groupedExperiments.has(key)) {
+        groupedExperiments.set(key, []);
+      }
+      groupedExperiments.get(key)!.push(exp);
+    });
+
+    let deletedCount = 0;
+    let keptExperimentId: string | undefined;
+
+    // For each group, keep only the most recent (first in desc order)
+    for (const [key, group] of groupedExperiments) {
+      if (group.length > 1) {
+        // Keep the first one (most recent), delete the rest
+        const toKeep = group[0];
+        const toDelete = group.slice(1);
+        
+        keptExperimentId = toKeep._id;
+        
+        // Delete the duplicates
+        for (const exp of toDelete) {
+          await ctx.db.delete(exp._id);
+          deletedCount++;
+        }
+      } else if (group.length === 1) {
+        keptExperimentId = group[0]._id;
+      }
+    }
+
+    return {
+      deletedCount,
+      keptExperimentId: keptExperimentId as any,
+      message: `Cleaned up ${deletedCount} duplicate experiment(s)`,
+    };
   },
 });

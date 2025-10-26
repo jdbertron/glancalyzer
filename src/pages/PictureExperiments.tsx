@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery } from 'convex/react'
+import { useQuery, useMutation } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { 
@@ -31,6 +31,15 @@ export function PictureExperiments() {
     api.experiments.getPictureExperiments,
     pictureId ? { pictureId: pictureId as any } : 'skip'
   )
+  
+  // Debug query to see what's in the database
+  const debugExperiments = useQuery(
+    api.experiments.debugPictureExperiments,
+    pictureId ? { pictureId: pictureId as any } : 'skip'
+  )
+  
+  // Cleanup mutation
+  const cleanupDuplicates = useMutation(api.experiments.cleanupDuplicateExperiments)
   
   const imageUrl = useQuery(
     api.pictures.getImageUrl,
@@ -122,6 +131,61 @@ export function PictureExperiments() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* Debug Info - Remove this after fixing the issue */}
+        {debugExperiments && debugExperiments.length > 0 && (
+          <div className="card mb-6 bg-yellow-50 border-yellow-200">
+            <div className="card-header">
+              <h2 className="card-title text-yellow-800">🐛 Debug: Experiments in Database</h2>
+              <p className="card-description text-yellow-700">
+                Found {debugExperiments.length} experiment(s) for this picture
+                {debugExperiments.length > 1 && (
+                  <span className="text-red-600 font-medium"> - Duplicates detected!</span>
+                )}
+              </p>
+            </div>
+            <div className="card-content">
+              <div className="space-y-2">
+                {debugExperiments.map((exp, index) => (
+                  <div key={exp._id} className="p-3 bg-white rounded border text-sm">
+                    <div className="font-medium">Experiment {index + 1}</div>
+                    <div>ID: {exp._id}</div>
+                    <div>Type: {exp.experimentType}</div>
+                    <div>Status: {exp.status}</div>
+                    <div>Created: {new Date(exp.createdAt).toLocaleString()}</div>
+                    <div>Has Eye Tracking Data: {exp.hasEyeTrackingData ? 'Yes' : 'No'}</div>
+                    <div>Gaze Points: {exp.gazePointCount}</div>
+                  </div>
+                ))}
+              </div>
+              
+              {debugExperiments.length > 1 && (
+                <div className="mt-4 p-4 bg-red-50 rounded-lg border border-red-200">
+                  <h3 className="font-medium text-red-800 mb-2">Clean Up Duplicates</h3>
+                  <p className="text-red-700 text-sm mb-3">
+                    This will keep only the most recent experiment and delete the older duplicates.
+                  </p>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const result = await cleanupDuplicates({ pictureId: pictureId as any })
+                        alert(`✅ ${result.message}`)
+                        // Refresh the page to see updated results
+                        window.location.reload()
+                      } catch (error) {
+                        console.error('Cleanup failed:', error)
+                        alert('❌ Failed to cleanup duplicates')
+                      }
+                    }}
+                    className="btn btn-sm bg-red-600 hover:bg-red-700 text-white"
+                  >
+                    🗑️ Clean Up Duplicates
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Picture Info */}
         <div className="card mb-6">
           <div className="card-header">

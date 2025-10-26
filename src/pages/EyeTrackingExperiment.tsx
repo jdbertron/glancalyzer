@@ -57,6 +57,7 @@ export function EyeTrackingExperiment() {
   const [showResults, setShowResults] = useState(false)
   const [imageOrientation, setImageOrientation] = useState<'portrait' | 'landscape' | null>(null)
   const [processedData, setProcessedData] = useState<EyeTrackingData | null>(null)
+  const [experimentCreated, setExperimentCreated] = useState(false)
   
   
   // Refs
@@ -64,6 +65,7 @@ export function EyeTrackingExperiment() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const imageRef = useRef<HTMLImageElement>(null)
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
+  const isCreatingExperimentRef = useRef<boolean>(false)
   
   // Convex queries and mutations
   const picture = useQuery(api.pictures.getPicture, pictureId ? { pictureId: pictureId as any } : 'skip')
@@ -177,14 +179,21 @@ export function EyeTrackingExperiment() {
     setSessionStartTime(Date.now())
     setIsTracking(true)
     setTimeRemaining(EYE_TRACKING_EXPERIMENT.DURATION_SECONDS)
+    setExperimentCreated(false) // Reset for new experiment
+    isCreatingExperimentRef.current = false // Reset ref for new experiment
     
     // Start countdown timer
     intervalRef.current = setInterval(() => {
       setTimeRemaining((prev: number) => {
         if (prev <= 1) {
           // Auto-stop when timer reaches 0
+          console.log('⏰ Timer auto-stop triggered at', new Date().toISOString())
           clearInterval(intervalRef.current!)
-          stopTracking()
+          // Call stopTracking asynchronously to avoid blocking the timer
+          console.log('⏰ Timer calling stopTracking()')
+          stopTracking().catch(error => {
+            console.error('Error in timer auto-stop:', error)
+          })
           return 0
         }
         return prev - 1
@@ -196,8 +205,31 @@ export function EyeTrackingExperiment() {
 
   // Stop tracking session
   const stopTracking = useCallback(async () => {
-    if (!webgazer || !isTracking) return
+    const callId = Math.random().toString(36).substring(2, 15)
+    const timestamp = new Date().toISOString()
     
+    console.log(`🛑 [${callId}] stopTracking called at ${timestamp}`)
+    console.log(`🛑 [${callId}] Current state:`, { 
+      webgazer: !!webgazer, 
+      isTracking, 
+      experimentCreated, 
+      isCreatingExperiment: isCreatingExperimentRef.current 
+    })
+    
+    // Set the ref IMMEDIATELY to prevent race conditions
+    if (isCreatingExperimentRef.current) {
+      console.log(`🚫 [${callId}] stopTracking prevented - already creating experiment`)
+      return
+    }
+    isCreatingExperimentRef.current = true
+    
+    if (!webgazer || !isTracking || experimentCreated) {
+      console.log(`🚫 [${callId}] stopTracking prevented at ${timestamp}`)
+      isCreatingExperimentRef.current = false // Reset if we're not proceeding
+      return
+    }
+    
+    console.log(`✅ [${callId}] stopTracking proceeding - creating experiment`)
     setIsTracking(false)
     if (intervalRef.current) {
       clearInterval(intervalRef.current)
@@ -238,6 +270,14 @@ export function EyeTrackingExperiment() {
     
     // Create experiment record
     try {
+      console.log(`📝 [${callId}] Creating experiment record at ${new Date().toISOString()}...`)
+      console.log(`📝 [${callId}] Experiment data:`, {
+        pictureId,
+        userId,
+        sessionDuration,
+        gazePointCount: gazeData.length
+      })
+      
       const experimentId = await createExperiment({
         pictureId: pictureId as any,
         userId: userId || undefined,
@@ -248,6 +288,8 @@ export function EyeTrackingExperiment() {
         }
       })
       
+      console.log(`✅ [${callId}] Experiment created successfully:`, experimentId.experimentId)
+      
       // Update with eye tracking results
       await updateEyeTrackingResults({
         experimentId: experimentId.experimentId,
@@ -255,16 +297,21 @@ export function EyeTrackingExperiment() {
         status: 'completed'
       })
       
+      console.log('✅ Eye tracking results updated')
+      setExperimentCreated(true) // Mark as created only after success
       setShowResults(true)
       toast.success('Eye tracking session completed!')
       
     } catch (error) {
-      console.error('Failed to save experiment:', error)
+      console.error('❌ Failed to save experiment:', error)
       toast.error('Failed to save experiment results.')
       // Still show results even if saving failed
       setShowResults(true)
+    } finally {
+      // Always reset the ref to allow future experiments
+      isCreatingExperimentRef.current = false
     }
-  }, [webgazer, isTracking, sessionStartTime, gazeData, pictureId, userId, createExperiment, updateEyeTrackingResults])
+  }, [webgazer, isTracking, sessionStartTime, gazeData, pictureId, userId, createExperiment, updateEyeTrackingResults, experimentCreated])
 
   // Process gaze data into fixations and scan path
   const processGazeData = (gazePoints: GazePoint[], duration: number): EyeTrackingData => {
@@ -470,7 +517,15 @@ export function EyeTrackingExperiment() {
                   </div>
                 </div>
                 <button
-                  onClick={stopTracking}
+                  onClick={async () => {
+                    console.log('🛑 Stop tracking button clicked at', new Date().toISOString())
+                    console.log('🛑 Manual button calling stopTracking()')
+                    try {
+                      await stopTracking()
+                    } catch (error) {
+                      console.error('Error in manual stop:', error)
+                    }
+                  }}
                   className="btn btn-outline btn-sm"
                 >
                   <Square className="h-4 w-4 mr-2" />
@@ -604,7 +659,10 @@ export function EyeTrackingExperiment() {
                         </p>
                       </div>
                       <button
-                        onClick={startTracking}
+                        onClick={() => {
+                          console.log('🎯 Start tracking button clicked')
+                          startTracking()
+                        }}
                         className="btn btn-primary btn-sm text-xs px-2 py-1"
                       >
                         <Play className="h-3 w-3 mr-1" />
@@ -671,8 +729,8 @@ export function EyeTrackingExperiment() {
 
 
 
-            {/* Results Display - Only show if data was collected */}
-            {processedData && processedData.gazePoints.length > 0 && (
+            {/* Results Display - Show if data was collected, otherwise show no data message */}
+            {processedData && processedData.gazePoints.length > 0 ? (
               <div className="card">
                 <div className="card-header">
                   <h2 className="card-title flex items-center space-x-2">
@@ -732,10 +790,7 @@ export function EyeTrackingExperiment() {
                   )}
                 </div>
               </div>
-            )}
-
-            {/* No Data Message - Only show if no data was collected */}
-            {(!processedData || processedData.gazePoints.length === 0) && (
+            ) : (
               <div className="card">
                 <div className="card-content">
                   <div className="text-center py-8">
@@ -761,6 +816,8 @@ export function EyeTrackingExperiment() {
                           setShowResults(false)
                           setProcessedData(null)
                           setGazeData([])
+                          setExperimentCreated(false)
+                          isCreatingExperimentRef.current = false
                         }}
                         className="btn btn-primary"
                       >
@@ -786,6 +843,8 @@ export function EyeTrackingExperiment() {
                     setShowResults(false)
                     setProcessedData(null)
                     setGazeData([])
+                    setExperimentCreated(false)
+                    isCreatingExperimentRef.current = false
                   }}
                   className="btn btn-outline"
                 >
