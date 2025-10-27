@@ -6,20 +6,16 @@ import {
   Image as ImageIcon, 
   Plus
 } from 'lucide-react'
-import { Link } from 'react-router-dom'
-import { EyeTrackingModal } from '../components/EyeTrackingModal'
+import { Link, useNavigate } from 'react-router-dom'
 import { PictureCard } from '../components/PictureCard'
 import toast from 'react-hot-toast'
 
 export function MyPictures() {
-  const [selectedPicture, setSelectedPicture] = useState<string | null>(null)
-  const [showEyeTrackingModal, setShowEyeTrackingModal] = useState(false)
   const { user, userId } = useAuth()
+  const navigate = useNavigate()
 
   // Get user's pictures
   const pictures = useQuery(api.pictures.getUserPictures, userId ? { userId } : 'skip')
-  const pictureDetails = useQuery(api.pictures.getPicture, selectedPicture ? { pictureId: selectedPicture as any } : 'skip')
-  const pictureUrl = useQuery(api.pictures.getImageUrl, pictureDetails?.fileId ? { fileId: pictureDetails.fileId } : 'skip')
 
   if (!user) {
     return (
@@ -91,8 +87,7 @@ export function MyPictures() {
                 key={picture._id}
                 picture={picture}
                 onAnalyzeFocus={(pictureId) => {
-                  setSelectedPicture(pictureId)
-                  setShowEyeTrackingModal(true)
+                  navigate(`/eye-tracking-experiment?pictureId=${pictureId}`)
                 }}
               />
             ))}
@@ -100,23 +95,6 @@ export function MyPictures() {
         )}
       </div>
 
-      {/* Eye Tracking Modal */}
-      {selectedPicture && pictureUrl && (
-        <EyeTrackingModal
-          isOpen={showEyeTrackingModal}
-          onClose={() => {
-            setShowEyeTrackingModal(false)
-            setSelectedPicture(null)
-          }}
-          pictureId={selectedPicture}
-          imageUrl={pictureUrl}
-          onComplete={(data) => {
-            setShowEyeTrackingModal(false)
-            setSelectedPicture(null)
-            toast.success('Eye tracking analysis completed!')
-          }}
-        />
-      )}
     </div>
   )
 }

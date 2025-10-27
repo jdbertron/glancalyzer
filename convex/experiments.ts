@@ -263,7 +263,8 @@ export const updateEyeTrackingResults = mutation({
       scanPath: v.optional(v.array(v.object({
         x: v.number(),
         y: v.number(),
-        timestamp: v.number()
+        timestamp: v.number(),
+        confidence: v.optional(v.number())
       }))),
       sessionDuration: v.optional(v.number()),
       heatmapData: v.optional(v.any()),
@@ -466,6 +467,209 @@ export const cleanupDuplicateExperiments = mutation({
       deletedCount,
       keptExperimentId: keptExperimentId as any,
       message: `Cleaned up ${deletedCount} duplicate experiment(s)`,
+    };
+  },
+});
+
+// Clear all experiments for a specific picture (preserves pictures and users)
+export const clearPictureExperiments = mutation({
+  args: {
+    pictureId: v.id("pictures"),
+  },
+  returns: v.object({
+    deletedCount: v.number(),
+    message: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    // Get all experiments for this picture
+    const experiments = await ctx.db
+      .query("experiments")
+      .withIndex("by_picture", (q) => q.eq("pictureId", args.pictureId))
+      .collect();
+
+    let deletedCount = 0;
+
+    // Delete all experiments for this picture
+    for (const experiment of experiments) {
+      await ctx.db.delete(experiment._id);
+      deletedCount++;
+    }
+
+    return {
+      deletedCount,
+      message: `Cleared ${deletedCount} experiment(s) for picture ${args.pictureId}`,
+    };
+  },
+});
+
+// Clear all experiments for a specific user (preserves pictures and users)
+export const clearUserExperiments = mutation({
+  args: {
+    userId: v.id("users"),
+  },
+  returns: v.object({
+    deletedCount: v.number(),
+    message: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    // Get all experiments for this user
+    const experiments = await ctx.db
+      .query("experiments")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .collect();
+
+    let deletedCount = 0;
+
+    // Delete all experiments for this user
+    for (const experiment of experiments) {
+      await ctx.db.delete(experiment._id);
+      deletedCount++;
+    }
+
+    // Reset user's experiment count
+    const user = await ctx.db.get(args.userId);
+    if (user) {
+      await ctx.db.patch(args.userId, {
+        experimentCount: 0,
+      });
+    }
+
+    return {
+      deletedCount,
+      message: `Cleared ${deletedCount} experiment(s) for user ${args.userId}`,
+    };
+  },
+});
+
+// Clear all experiments with empty gaze data (failed experiments)
+export const clearEmptyExperiments = mutation({
+  args: {},
+  returns: v.object({
+    deletedCount: v.number(),
+    message: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    // Get all experiments
+    const experiments = await ctx.db
+      .query("experiments")
+      .collect();
+
+    let deletedCount = 0;
+
+    // Delete experiments with empty or invalid eye tracking data
+    for (const experiment of experiments) {
+      if (experiment.experimentType === "Eye Tracking" && experiment.eyeTrackingData) {
+        const gazePoints = experiment.eyeTrackingData.gazePoints || [];
+        const fixationPoints = experiment.eyeTrackingData.fixationPoints || [];
+        
+        // Delete if no gaze points or all gaze points are at (0,0)
+        const hasValidData = gazePoints.length > 0 && 
+          gazePoints.some(point => point.x !== 0 || point.y !== 0);
+        
+        if (!hasValidData) {
+          await ctx.db.delete(experiment._id);
+          deletedCount++;
+        }
+      }
+    }
+
+    return {
+      deletedCount,
+      message: `Cleared ${deletedCount} experiment(s) with empty gaze data`,
+    };
+  },
+});
+
+// Clear all experiments (DANGER: This removes ALL experiment data)
+export const clearAllExperiments = mutation({
+  args: {
+    confirm: v.string(), // Must be "DELETE_ALL_EXPERIMENTS" to confirm
+  },
+  returns: v.object({
+    deletedCount: v.number(),
+    message: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    if (args.confirm !== "DELETE_ALL_EXPERIMENTS") {
+      throw new Error("Confirmation string required. Pass 'DELETE_ALL_EXPERIMENTS' to confirm.");
+    }
+
+    // Get all experiments
+    const experiments = await ctx.db
+      .query("experiments")
+      .collect();
+
+    let deletedCount = 0;
+
+    // Delete all experiments
+    for (const experiment of experiments) {
+      await ctx.db.delete(experiment._id);
+      deletedCount++;
+    }
+
+    // Reset all users' experiment counts
+    const users = await ctx.db.query("users").collect();
+    for (const user of users) {
+      await ctx.db.patch(user._id, {
+        experimentCount: 0,
+      });
+    }
+
+    return {
+      deletedCount,
+      message: `Cleared ALL ${deletedCount} experiment(s) from the database`,
+    };
+  },
+});
+
+// Get database statistics
+export const getDatabaseStats = query({
+  args: {},
+  returns: v.object({
+    totalExperiments: v.number(),
+    totalPictures: v.number(),
+    totalUsers: v.number(),
+    experimentsByType: v.record(v.string(), v.number()),
+    experimentsByStatus: v.record(v.string(), v.number()),
+    emptyExperiments: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    const experiments = await ctx.db.query("experiments").collect();
+    const pictures = await ctx.db.query("pictures").collect();
+    const users = await ctx.db.query("users").collect();
+
+    // Count by experiment type
+    const experimentsByType: Record<string, number> = {};
+    experiments.forEach(exp => {
+      experimentsByType[exp.experimentType] = (experimentsByType[exp.experimentType] || 0) + 1;
+    });
+
+    // Count by status
+    const experimentsByStatus: Record<string, number> = {};
+    experiments.forEach(exp => {
+      experimentsByStatus[exp.status] = (experimentsByStatus[exp.status] || 0) + 1;
+    });
+
+    // Count empty experiments
+    let emptyExperiments = 0;
+    experiments.forEach(exp => {
+      if (exp.experimentType === "Eye Tracking" && exp.eyeTrackingData) {
+        const gazePoints = exp.eyeTrackingData.gazePoints || [];
+        const hasValidData = gazePoints.length > 0 && 
+          gazePoints.some(point => point.x !== 0 || point.y !== 0);
+        if (!hasValidData) {
+          emptyExperiments++;
+        }
+      }
+    });
+
+    return {
+      totalExperiments: experiments.length,
+      totalPictures: pictures.length,
+      totalUsers: users.length,
+      experimentsByType,
+      experimentsByStatus,
+      emptyExperiments,
     };
   },
 });

@@ -4,7 +4,6 @@ import { api } from '../../convex/_generated/api'
 import { useAuth } from '../hooks/useAuth'
 import { Upload as UploadIcon, X, Image as ImageIcon, AlertCircle, Eye, BarChart3 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { EyeTrackingModal } from '../components/EyeTrackingModal'
 import toast from 'react-hot-toast'
 
 export function Upload() {
@@ -13,7 +12,6 @@ export function Upload() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [uploadedPictureId, setUploadedPictureId] = useState<string | null>(null)
   const [showSuccess, setShowSuccess] = useState(false)
-  const [showEyeTrackingModal, setShowEyeTrackingModal] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
   const { user, userId } = useAuth()
@@ -317,7 +315,7 @@ export function Upload() {
                 {/* Main Action - Eye Tracking */}
                 <div className="mb-4">
                   <button
-                    onClick={() => setShowEyeTrackingModal(true)}
+                    onClick={() => navigate(`/eye-tracking-experiment?pictureId=${uploadedPictureId}`)}
                     className="btn btn-primary btn-lg w-full flex items-center justify-center space-x-2"
                   >
                     <Eye className="h-5 w-5" />
@@ -446,20 +444,6 @@ export function Upload() {
         )}
       </div>
 
-              {/* Eye Tracking Modal */}
-              {uploadedPictureId && (
-                <EyeTrackingModal
-                  isOpen={showEyeTrackingModal}
-                  onClose={() => setShowEyeTrackingModal(false)}
-                  pictureId={uploadedPictureId}
-                  imageUrl={uploadedImageUrl || null}
-                  onComplete={(data) => {
-                    setShowEyeTrackingModal(false)
-                    toast.success('Eye tracking analysis completed!')
-                    // Optionally navigate to results or show a summary
-                  }}
-                />
-              )}
     </div>
   )
 }

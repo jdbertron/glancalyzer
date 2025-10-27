@@ -17,14 +17,8 @@ import {
 import toast from 'react-hot-toast'
 import { EYE_TRACKING_EXPERIMENT } from '../constants'
 import { EyeTrackingResults } from '../components/EyeTrackingResults'
-
-// WebGazer types
-interface GazePoint {
-  x: number
-  y: number
-  timestamp: number
-  confidence?: number
-}
+import { LoadingSpinner } from '../components/LoadingSpinner'
+import { webgazerManager, GazePoint, CalibrationResult } from '../utils/webgazerManager'
 
 interface EyeTrackingData {
   gazePoints: GazePoint[]
@@ -45,27 +39,24 @@ export function EyeTrackingExperiment() {
   const { user, userId } = useAuth()
   const pictureId = searchParams.get('pictureId')
   
-  // WebGazer state
-  const [webgazer, setWebgazer] = useState<any>(null)
+  // Simplified state - just UI state, no WebGazer state
   const [isInitialized, setIsInitialized] = useState(false)
-  const [isTracking, setIsTracking] = useState(false)
   const [isCalibrated, setIsCalibrated] = useState(false)
-  const [webcamPermission, setWebcamPermission] = useState(false)
+  const [isTracking, setIsTracking] = useState(false)
+  const [isCalibrating, setIsCalibrating] = useState(false)
   const [gazeData, setGazeData] = useState<GazePoint[]>([])
-  const [sessionStartTime, setSessionStartTime] = useState<number | null>(null)
+  const [calibrationResult, setCalibrationResult] = useState<CalibrationResult | null>(null)
+  const [currentGazePoint, setCurrentGazePoint] = useState<GazePoint | null>(null)
   const [timeRemaining, setTimeRemaining] = useState<number>(EYE_TRACKING_EXPERIMENT.DURATION_SECONDS)
   const [showResults, setShowResults] = useState(false)
-  const [imageOrientation, setImageOrientation] = useState<'portrait' | 'landscape' | null>(null)
-  const [processedData, setProcessedData] = useState<EyeTrackingData | null>(null)
-  const [experimentCreated, setExperimentCreated] = useState(false)
-  
+  const [experimentResults, setExperimentResults] = useState<EyeTrackingData | null>(null)
+  const [debugMode, setDebugMode] = useState(false)
+  const [imageOrientation, setImageOrientation] = useState<'portrait' | 'landscape'>('landscape')
   
   // Refs
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const imageRef = useRef<HTMLImageElement>(null)
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
-  const isCreatingExperimentRef = useRef<boolean>(false)
+  const imageRef = useRef<HTMLImageElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
   
   // Convex queries and mutations
   const picture = useQuery(api.pictures.getPicture, pictureId ? { pictureId: pictureId as any } : 'skip')
@@ -73,408 +64,190 @@ export function EyeTrackingExperiment() {
   const updateEyeTrackingResults = useMutation(api.experiments.updateEyeTrackingResults)
   const getImageUrl = useQuery(api.pictures.getImageUrl, picture?.fileId ? { fileId: picture.fileId } : 'skip')
 
-  // Initialize WebGazer
-  const initializeWebGazer = useCallback(async () => {
-    try {
-      // Dynamically import WebGazer
-      const webgazerModule = await import('webgazer')
-      const wg = webgazerModule.default || webgazerModule as any
-      
-      // Initialize WebGazer
-      wg.setRegression('ridge')
-        .setTracker('TFFacemesh')
-        .setGazeListener((data: any, clock: any) => {
-          if (data && isTracking) {
-            const gazePoint: GazePoint = {
-              x: data.x,
-              y: data.y,
-              timestamp: Date.now(),
-              confidence: data.confidence || 0.5
-            }
-            setGazeData(prev => {
-              const newData = [...prev, gazePoint]
-              // Enhanced logging with more details
-              console.log(`👁️ Gaze point #${newData.length}: (${Math.round(data.x)}, ${Math.round(data.y)}) confidence: ${(data.confidence || 0.5).toFixed(2)}`)
-              if (newData.length % 10 === 0) {
-                console.log(`📊 Data collection progress: ${newData.length} points collected so far`)
-              }
-              return newData
-            })
-          }
+  // Initialize WebGazer on mount
+  useEffect(() => {
+    if (pictureId && !isInitialized) {
+      console.log('🚀 [React] Initializing WebGazer...')
+      webgazerManager.initialize()
+        .then(() => {
+          setIsInitialized(true)
+          toast.success('WebGazer initialized! Click "Start Calibration" to begin.')
         })
-        .saveDataAcrossSessions(true)
-      
-      await wg.showVideoPreview(true) // Show webcam for debugging
-      await wg.showPredictionPoints(false) // Hide prediction points initially
-      await wg.begin()
-        
-      // Style the video preview to be more visible and better positioned
-      setTimeout(() => {
-        const videoElement = document.querySelector('video') as HTMLVideoElement
-        if (videoElement) {
-          videoElement.style.position = 'fixed'
-          videoElement.style.top = '20px'
-          videoElement.style.right = '20px'
-          videoElement.style.width = '200px'
-          videoElement.style.height = '150px'
-          videoElement.style.border = '2px solid #3b82f6'
-          videoElement.style.borderRadius = '8px'
-          videoElement.style.zIndex = '1000'
-          videoElement.style.backgroundColor = '#000'
-        }
-      }, 1000)
-      
-      setWebgazer(wg)
-      setIsInitialized(true)
-      setWebcamPermission(true)
-      
-      // Show initialization success
-      toast.success('WebGazer initialized! Starting automatic calibration...')
-      
-      // Start automatic calibration immediately
-      setTimeout(() => {
-        startCalibration()
-      }, 1000)
-      
-    } catch (error) {
-      console.error('WebGazer initialization failed:', error)
-      toast.error('Failed to initialize eye tracking. Please check your webcam permissions.')
+        .catch((error) => {
+          console.error('❌ [React] WebGazer initialization failed:', error)
+          toast.error('Failed to initialize WebGazer. Please refresh the page.')
+        })
     }
-  }, [isTracking])
+  }, [pictureId, isInitialized])
+
+  // Add gaze listener
+  useEffect(() => {
+    const gazeListener = (data: GazePoint) => {
+      setCurrentGazePoint(data)
+      
+      if (isCalibrating) {
+        // Update calibration data display
+        console.log(`🔍 [React] Calibration point: (${Math.round(data.x)}, ${Math.round(data.y)})`)
+      }
+      
+      if (isTracking) {
+        // Update experiment data
+        setGazeData(prev => [...prev, data])
+        console.log(`👁️ [React] Gaze point: (${Math.round(data.x)}, ${Math.round(data.y)})`)
+      }
+    }
+
+    webgazerManager.addGazeListener(gazeListener)
+    
+    return () => {
+      webgazerManager.removeGazeListener(gazeListener)
+    }
+  }, [isCalibrating, isTracking])
+
+  // Sync with WebGazer manager state
+  useEffect(() => {
+    const checkState = () => {
+      setIsCalibrating(webgazerManager.getCalibrating())
+      setIsTracking(webgazerManager.getTracking())
+    }
+    
+    const interval = setInterval(checkState, 100)
+    return () => clearInterval(interval)
+  }, [])
 
   // Start calibration
   const startCalibration = useCallback(async () => {
-    if (!webgazer) return
+    console.log('🎯 [React] Start calibration button clicked')
     
     try {
-      // Automatic calibration - no visible points needed
-      await webgazer.showPredictionPoints(false) // Keep prediction points hidden
-      await webgazer.showVideoPreview(false) // Keep webcam hidden during calibration
+      setIsCalibrating(true)
+      await webgazerManager.startCalibration()
       
-      // Give WebGazer time to learn from natural eye movements
-      toast.success('Calibrating... Look at the screen naturally for 3 seconds.', {
-        duration: 3000,
+      toast.success('Calibrating... Look at the screen naturally for 10 seconds. Move your eyes around the screen.', {
+        duration: 10000,
         style: {
           background: '#3b82f6',
           color: 'white',
         }
       })
       
-      // Auto-complete calibration after 3 seconds
+      // Auto-validate after 10 seconds
       setTimeout(() => {
-        setIsCalibrated(true)
-        toast.success('Calibration complete! You can now start the experiment.')
-      }, 3000)
+        const result = webgazerManager.validateCalibration()
+        setCalibrationResult(result)
+        
+        if (result.isValid) {
+          setIsCalibrated(true)
+          toast.success(`Calibration complete! Collected ${result.pointsCollected} points with ${(result.averageConfidence * 100).toFixed(1)}% avg confidence.`)
+        } else {
+          toast.error(`Calibration failed: ${result.errorMessage}`)
+        }
+      }, 10000)
       
     } catch (error) {
-      console.error('Calibration failed:', error)
+      console.error('❌ [React] Calibration failed:', error)
       toast.error('Calibration failed. Please try again.')
+      setIsCalibrating(false)
     }
-  }, [webgazer])
+  }, [])
 
-  // Start tracking session
+  // Start tracking
   const startTracking = useCallback(() => {
-    if (!webgazer || !isCalibrated) return
+    console.log('🎯 [React] Start tracking button clicked')
     
-    setGazeData([])
-    setSessionStartTime(Date.now())
-    setIsTracking(true)
-    setTimeRemaining(EYE_TRACKING_EXPERIMENT.DURATION_SECONDS)
-    setExperimentCreated(false) // Reset for new experiment
-    isCreatingExperimentRef.current = false // Reset ref for new experiment
+    if (!calibrationResult?.isValid) {
+      toast.error('Calibration is not valid. Please recalibrate before starting the experiment.')
+      return
+    }
     
-    // Start countdown timer
-    intervalRef.current = setInterval(() => {
-      setTimeRemaining((prev: number) => {
-        if (prev <= 1) {
-          // Auto-stop when timer reaches 0
-          console.log('⏰ Timer auto-stop triggered at', new Date().toISOString())
-          clearInterval(intervalRef.current!)
-          // Call stopTracking asynchronously to avoid blocking the timer
-          console.log('⏰ Timer calling stopTracking()')
-          stopTracking().catch(error => {
-            console.error('Error in timer auto-stop:', error)
-          })
-          return 0
-        }
-        return prev - 1
-      })
-    }, 1000)
-    
-    toast.success('Eye tracking started! Look at the image naturally.')
-  }, [webgazer, isCalibrated])
+    try {
+      setGazeData([])
+      setIsTracking(true)
+      setTimeRemaining(EYE_TRACKING_EXPERIMENT.DURATION_SECONDS)
+      
+      webgazerManager.startTracking()
+      
+      // Start countdown timer
+      intervalRef.current = setInterval(() => {
+        setTimeRemaining((prev: number) => {
+          if (prev <= 1) {
+            clearInterval(intervalRef.current!)
+            stopTracking()
+            return 0
+          }
+          return prev - 1
+        })
+      }, 1000)
+      
+      toast.success('Eye tracking started! Look at the image naturally.')
+      
+    } catch (error) {
+      console.error('❌ [React] Failed to start tracking:', error)
+      toast.error('Failed to start tracking. Please try again.')
+    }
+  }, [calibrationResult])
 
-  // Stop tracking session
+  // Stop tracking
   const stopTracking = useCallback(async () => {
-    const callId = Math.random().toString(36).substring(2, 15)
-    const timestamp = new Date().toISOString()
+    console.log('🛑 [React] Stop tracking called')
     
-    console.log(`🛑 [${callId}] stopTracking called at ${timestamp}`)
-    console.log(`🛑 [${callId}] Current state:`, { 
-      webgazer: !!webgazer, 
-      isTracking, 
-      experimentCreated, 
-      isCreatingExperiment: isCreatingExperimentRef.current 
-    })
-    
-    // Set the ref IMMEDIATELY to prevent race conditions
-    if (isCreatingExperimentRef.current) {
-      console.log(`🚫 [${callId}] stopTracking prevented - already creating experiment`)
-      return
-    }
-    isCreatingExperimentRef.current = true
-    
-    if (!webgazer || !isTracking || experimentCreated) {
-      console.log(`🚫 [${callId}] stopTracking prevented at ${timestamp}`)
-      isCreatingExperimentRef.current = false // Reset if we're not proceeding
-      return
-    }
-    
-    console.log(`✅ [${callId}] stopTracking proceeding - creating experiment`)
-    setIsTracking(false)
     if (intervalRef.current) {
       clearInterval(intervalRef.current)
     }
     
-    // Clean up WebGazer and stop webcam
-    try {
-      console.log(`🛑 [${callId}] Starting WebGazer cleanup...`)
-      
-      // Pause WebGazer first
-      await webgazer.pause()
-      console.log(`🛑 [${callId}] WebGazer paused`)
-      
-      // Hide video preview and prediction points
-      await webgazer.showVideoPreview(false)
-      await webgazer.showPredictionPoints(false)
-      console.log(`🛑 [${callId}] WebGazer UI elements hidden`)
-      
-      // End the WebGazer session completely
-      await webgazer.end()
-      console.log(`🛑 [${callId}] WebGazer session ended`)
-      
-      // Find and stop all video streams
-      const videoElements = document.querySelectorAll('video') as NodeListOf<HTMLVideoElement>
-      videoElements.forEach((videoElement, index) => {
-        console.log(`🛑 [${callId}] Processing video element ${index + 1}/${videoElements.length}`)
-        
-        // Stop all tracks in the video stream
-        if (videoElement.srcObject) {
-          const stream = videoElement.srcObject as MediaStream
-          const tracks = stream.getTracks()
-          console.log(`🛑 [${callId}] Found ${tracks.length} tracks in video stream`)
-          
-          tracks.forEach((track, trackIndex) => {
-            console.log(`🛑 [${callId}] Stopping track ${trackIndex + 1}: ${track.kind}`)
-            track.stop()
-          })
-          
-          // Clear the srcObject
-          videoElement.srcObject = null
-        }
-        
-        // Hide the video element
-        videoElement.style.display = 'none'
-        videoElement.style.visibility = 'hidden'
-        console.log(`🛑 [${callId}] Video element ${index + 1} hidden and stream cleared`)
-      })
-      
-      // Also try to stop any remaining media streams
-      if (navigator.mediaDevices) {
-        // This is a fallback to ensure all streams are stopped
-        try {
-          const devices = await navigator.mediaDevices.enumerateDevices()
-          console.log(`🛑 [${callId}] Found ${devices.length} media devices`)
-        } catch (e) {
-          console.log(`🛑 [${callId}] Could not enumerate devices:`, e)
-        }
-      }
-      
-      console.log(`✅ [${callId}] WebGazer cleanup completed successfully`)
-      
-    } catch (error) {
-      console.error(`❌ [${callId}] Error stopping WebGazer:`, error)
-      
-      // Fallback cleanup - force stop all video elements
-      const videoElements = document.querySelectorAll('video') as NodeListOf<HTMLVideoElement>
-      videoElements.forEach((videoElement, index) => {
-        try {
-          if (videoElement.srcObject) {
-            const stream = videoElement.srcObject as MediaStream
-            stream.getTracks().forEach(track => track.stop())
-            videoElement.srcObject = null
-          }
-          videoElement.style.display = 'none'
-          videoElement.style.visibility = 'hidden'
-          console.log(`🛑 [${callId}] Fallback cleanup for video element ${index + 1}`)
-        } catch (fallbackError) {
-          console.error(`❌ [${callId}] Fallback cleanup failed for video element ${index + 1}:`, fallbackError)
-        }
-      })
+    setIsTracking(false)
+    const collectedData = webgazerManager.stopTracking()
+    
+    console.log(`📊 [React] Collected ${collectedData.length} gaze points`)
+    
+    if (collectedData.length === 0) {
+      toast.error('No gaze data collected. Please check your webcam and lighting.')
+      return
     }
     
-    const sessionDuration = Date.now() - (sessionStartTime || Date.now())
-    
-    // Process the gaze data with enhanced logging
-    console.log(`🔄 Processing ${gazeData.length} gaze points over ${sessionDuration}ms`)
-    console.log('📊 Raw gaze data sample:', gazeData.slice(0, 5))
-    console.log(`📈 Data collection rate: ${(gazeData.length / (sessionDuration / 1000)).toFixed(1)} points/second`)
-    
-    const processedData = processGazeData(gazeData, sessionDuration)
-    console.log('✅ Processed data summary:', {
-      gazePoints: processedData.gazePoints.length,
-      fixations: processedData.fixationPoints.length,
-      sessionDuration: processedData.sessionDuration,
-      scanPathLength: processedData.scanPath.length
-    })
-    console.log('💾 Setting processedData state for display...')
-    setProcessedData(processedData) // Store for immediate display
-    
-    // Create experiment record
     try {
-      console.log(`📝 [${callId}] Creating experiment record at ${new Date().toISOString()}...`)
-      console.log(`📝 [${callId}] Experiment data:`, {
-        pictureId,
-        userId,
-        sessionDuration,
-        gazePointCount: gazeData.length
-      })
-      
-      const experimentId = await createExperiment({
+      // Create experiment
+      const experimentResponse = await createExperiment({
         pictureId: pictureId as any,
         userId: userId || undefined,
-        experimentType: 'Eye Tracking',
+        experimentType: 'eye-tracking',
         parameters: {
-          sessionDuration,
-          gazePointCount: gazeData.length
+          duration: EYE_TRACKING_EXPERIMENT.DURATION_SECONDS,
+          gazeDataCount: collectedData.length
         }
       })
       
-      console.log(`✅ [${callId}] Experiment created successfully:`, experimentId.experimentId)
+      // Extract the experiment ID from the response
+      const experimentId = typeof experimentResponse === 'string' 
+        ? experimentResponse 
+        : experimentResponse.experimentId
       
-      // Update with eye tracking results
+      // Process and save results
+      const processedData: EyeTrackingData = {
+        gazePoints: collectedData,
+        fixationPoints: [], // TODO: Implement fixation detection
+        scanPath: collectedData,
+        sessionDuration: EYE_TRACKING_EXPERIMENT.DURATION_SECONDS,
+        heatmapData: null // TODO: Implement heatmap generation
+      }
+      
       await updateEyeTrackingResults({
-        experimentId: experimentId.experimentId,
-        eyeTrackingData: processedData,
-        status: 'completed'
+        experimentId: experimentId as any,
+        status: 'completed',
+        eyeTrackingData: processedData
       })
       
-      console.log('✅ Eye tracking results updated')
-      setExperimentCreated(true) // Mark as created only after success
+      setExperimentResults(processedData)
       setShowResults(true)
       toast.success('Eye tracking session completed!')
       
     } catch (error) {
-      console.error('❌ Failed to save experiment:', error)
+      console.error('❌ [React] Failed to save experiment:', error)
       toast.error('Failed to save experiment results.')
       // Still show results even if saving failed
       setShowResults(true)
-    } finally {
-      // Always reset the ref to allow future experiments
-      isCreatingExperimentRef.current = false
     }
-  }, [webgazer, isTracking, sessionStartTime, gazeData, pictureId, userId, createExperiment, updateEyeTrackingResults, experimentCreated])
-
-  // Process gaze data into fixations and scan path
-  const processGazeData = (gazePoints: GazePoint[], duration: number): EyeTrackingData => {
-    // Simple fixation detection using global constants
-    const fixationThreshold = EYE_TRACKING_EXPERIMENT.FIXATION_THRESHOLD_PX // pixels
-    const fixationDuration = EYE_TRACKING_EXPERIMENT.FIXATION_DURATION_MS // ms
-    
-    const fixationPoints: Array<{
-      x: number
-      y: number
-      duration: number
-      startTime: number
-    }> = []
-    
-    let currentFixation: { x: number; y: number; startTime: number; points: GazePoint[] } | null = null
-    
-    for (const point of gazePoints) {
-      if (!currentFixation) {
-        currentFixation = {
-          x: point.x,
-          y: point.y,
-          startTime: point.timestamp,
-          points: [point]
-        }
-      } else {
-        const distance = Math.sqrt(
-          Math.pow(point.x - currentFixation.x, 2) + 
-          Math.pow(point.y - currentFixation.y, 2)
-        )
-        
-        if (distance < fixationThreshold) {
-          currentFixation.points.push(point)
-          // Update center point
-          currentFixation.x = currentFixation.points.reduce((sum, p) => sum + p.x, 0) / currentFixation.points.length
-          currentFixation.y = currentFixation.points.reduce((sum, p) => sum + p.y, 0) / currentFixation.points.length
-        } else {
-          // End current fixation if it lasted long enough
-          const fixationDuration = point.timestamp - currentFixation.startTime
-          if (fixationDuration >= fixationDuration) {
-            fixationPoints.push({
-              x: currentFixation.x,
-              y: currentFixation.y,
-              duration: fixationDuration,
-              startTime: currentFixation.startTime
-            })
-          }
-          
-          // Start new fixation
-          currentFixation = {
-            x: point.x,
-            y: point.y,
-            startTime: point.timestamp,
-            points: [point]
-          }
-        }
-      }
-    }
-    
-    // Add final fixation if it exists
-    if (currentFixation && currentFixation.points.length > 1) {
-      const finalDuration = gazePoints[gazePoints.length - 1].timestamp - currentFixation.startTime
-      if (finalDuration >= fixationDuration) {
-        fixationPoints.push({
-          x: currentFixation.x,
-          y: currentFixation.y,
-          duration: finalDuration,
-          startTime: currentFixation.startTime
-        })
-      }
-    }
-    
-    return {
-      gazePoints,
-      fixationPoints,
-      scanPath: gazePoints,
-      sessionDuration: duration,
-      heatmapData: generateHeatmapData(gazePoints)
-    }
-  }
-
-  // Generate heatmap data
-  const generateHeatmapData = (gazePoints: GazePoint[]) => {
-    // Simple heatmap generation - in a real implementation, you'd use a proper heatmap library
-    const gridSize = 20
-    const heatmap: number[][] = []
-    
-    for (let i = 0; i < gridSize; i++) {
-      heatmap[i] = new Array(gridSize).fill(0)
-    }
-    
-    gazePoints.forEach(point => {
-      const x = Math.floor((point.x / window.innerWidth) * gridSize)
-      const y = Math.floor((point.y / window.innerHeight) * gridSize)
-      
-      if (x >= 0 && x < gridSize && y >= 0 && y < gridSize) {
-        heatmap[y][x] += 1
-      }
-    })
-    
-    return heatmap
-  }
+  }, [pictureId, userId, createExperiment, updateEyeTrackingResults])
 
   // Detect image orientation
   const detectImageOrientation = useCallback((img: HTMLImageElement) => {
@@ -485,96 +258,31 @@ export function EyeTrackingExperiment() {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      console.log('🧹 Component unmounting - starting cleanup')
-      
       if (intervalRef.current) {
         clearInterval(intervalRef.current)
-        console.log('🧹 Timer interval cleared')
       }
-      
-      if (webgazer) {
-        try {
-          console.log('🧹 Cleaning up WebGazer on unmount')
-          webgazer.pause()
-          webgazer.showVideoPreview(false)
-          webgazer.showPredictionPoints(false)
-          webgazer.end()
-          console.log('🧹 WebGazer cleanup completed')
-        } catch (error) {
-          console.error('❌ Error cleaning up WebGazer on unmount:', error)
-        }
-      }
-      
-      // Comprehensive video stream cleanup
-      try {
-        const videoElements = document.querySelectorAll('video') as NodeListOf<HTMLVideoElement>
-        console.log(`🧹 Found ${videoElements.length} video elements to cleanup`)
-        
-        videoElements.forEach((videoElement, index) => {
-          try {
-            if (videoElement.srcObject) {
-              const stream = videoElement.srcObject as MediaStream
-              const tracks = stream.getTracks()
-              console.log(`🧹 Stopping ${tracks.length} tracks in video element ${index + 1}`)
-              
-              tracks.forEach(track => {
-                track.stop()
-                console.log(`🧹 Stopped ${track.kind} track`)
-              })
-              
-              videoElement.srcObject = null
-            }
-            
-            videoElement.style.display = 'none'
-            videoElement.style.visibility = 'hidden'
-            console.log(`🧹 Video element ${index + 1} cleaned up`)
-          } catch (videoError) {
-            console.error(`❌ Error cleaning up video element ${index + 1}:`, videoError)
-          }
-        })
-        
-        console.log('✅ Component unmount cleanup completed')
-      } catch (cleanupError) {
-        console.error('❌ Error during component unmount cleanup:', cleanupError)
-      }
+      // Don't cleanup WebGazer here - let it persist globally
     }
-  }, [webgazer])
+  }, [])
 
-
-  // Initialize on mount
-  useEffect(() => {
-    if (pictureId && !webgazer) {
-      initializeWebGazer()
-    }
-  }, [pictureId, initializeWebGazer])
-
-  if (!picture) {
+  // Show loading if no picture
+  if (!pictureId || !picture || !getImageUrl) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin" />
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <LoadingSpinner />
       </div>
     )
   }
 
-  if (!user) {
+  // Show results if experiment completed
+  if (showResults && experimentResults) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">
-            Authentication Required
-          </h2>
-          <p className="text-gray-600 mb-4">
-            Please log in to run eye tracking experiments
-          </p>
-          <button
-            onClick={() => navigate('/login')}
-            className="btn btn-primary"
-          >
-            Sign In
-          </button>
-        </div>
-      </div>
+      <EyeTrackingResults
+        data={experimentResults}
+        imageUrl={getImageUrl}
+        imageWidth={imageRef.current?.naturalWidth || 800}
+        imageHeight={imageRef.current?.naturalHeight || 600}
+      />
     )
   }
 
@@ -612,15 +320,7 @@ export function EyeTrackingExperiment() {
                   </div>
                 </div>
                 <button
-                  onClick={async () => {
-                    console.log('🛑 Stop tracking button clicked at', new Date().toISOString())
-                    console.log('🛑 Manual button calling stopTracking()')
-                    try {
-                      await stopTracking()
-                    } catch (error) {
-                      console.error('Error in manual stop:', error)
-                    }
-                  }}
+                  onClick={stopTracking}
                   className="btn btn-outline btn-sm"
                 >
                   <Square className="h-4 w-4 mr-2" />
@@ -633,323 +333,194 @@ export function EyeTrackingExperiment() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-        {!showResults ? (
-          <div className={`${imageOrientation === 'portrait' ? 'flex gap-4' : 'space-y-4'}`}>
-            {/* Image Display - Maximized for eye tracking accuracy */}
-            <div className={`${imageOrientation === 'portrait' ? 'flex-1' : 'w-full'}`}>
-              <div className="card">
-                <div className="card-header">
-                  <h2 className="card-title">Image to Analyze</h2>
-                  <p className="card-description">
-                    Look at this image naturally during the experiment
-                  </p>
-                </div>
-                <div className="card-content p-2">
-                  <div className="relative">
-                    {getImageUrl ? (
-                      <img
-                        ref={imageRef}
-                        src={getImageUrl}
-                        alt="Experiment image"
-                        className="w-full h-auto rounded-lg shadow-lg"
-                        style={{ 
-                          maxHeight: imageOrientation === 'portrait' ? '80vh' : '70vh', 
-                          objectFit: 'contain',
-                          width: '100%'
-                        }}
-                        onLoad={(e) => {
-                          const img = e.target as HTMLImageElement
-                          detectImageOrientation(img)
-                        }}
-                        onError={(e) => {
-                          console.error('Image failed to load:', e)
-                          toast.error('Failed to load image')
-                        }}
-                      />
-                    ) : (
-                      <div className="w-full h-64 bg-gray-100 rounded-lg shadow-lg flex items-center justify-center">
-                        <div className="text-center">
-                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto mb-2"></div>
-                          <p className="text-gray-500">Loading image...</p>
-                          <p className="text-xs text-gray-400 mt-2">
-                            Picture ID: {pictureId}
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                    {isTracking && (
-                      <div className="absolute inset-0 pointer-events-none">
-                        <canvas
-                          ref={canvasRef}
-                          className="w-full h-full"
-                          style={{ position: 'absolute', top: 0, left: 0 }}
-                        />
-                        {/* Tracking indicator with data count */}
-                        <div className="absolute top-4 right-4 bg-red-500 text-white px-3 py-1 rounded-full text-sm font-medium animate-pulse">
-                          🔴 Tracking Active ({gazeData.length} points)
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
+        <div className="flex gap-4">
+          {/* Image Display */}
+          <div className="flex-1">
+            <div className="card">
+              <div className="card-header">
+                <h2 className="card-title">Image to Analyze</h2>
+                <p className="card-description">
+                  Look at this image naturally during the experiment
+                </p>
               </div>
-            </div>
-
-            {/* Controls - Ultra-compact on the longer side */}
-            <div className={`${imageOrientation === 'portrait' ? 'w-72 flex-shrink-0' : 'w-full'}`}>
-              <div className="card">
-                <div className="card-header py-3">
-                  <h2 className="card-title text-lg">Experiment Controls</h2>
-                  <p className="card-description text-sm">
-                    Follow the steps to complete your eye tracking experiment
-                  </p>
-                </div>
-                <div className="card-content space-y-2 p-3">
-                  {/* Step 1: Initialize - Show until completed */}
-                  {!isInitialized && (
-                    <div className="flex items-center space-x-2 p-2 bg-gray-50 rounded-lg">
-                      <div className="flex-shrink-0">
-                        <div className="h-4 w-4 rounded-full border-2 border-gray-300" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-medium text-gray-900 text-xs">
-                          1. Initialize Eye Tracking
-                        </h3>
-                        <p className="text-xs text-gray-600">
-                          Setting up eye tracking system...
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Step 2: Calibrate - Show when initialized but not calibrated */}
-                  {isInitialized && !isCalibrated && (
-                    <div className="flex items-center space-x-2 p-2 bg-gray-50 rounded-lg">
-                      <div className="flex-shrink-0">
-                        <div className="h-4 w-4 rounded-full bg-blue-500 animate-pulse" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-medium text-gray-900 text-xs">
-                          2. Auto-Calibrate System
-                        </h3>
-                        <p className="text-xs text-gray-600">
-                          Calibrating automatically... Look at the screen naturally
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Step 3: Start Experiment - Show when calibrated but not tracking */}
-                  {isCalibrated && !isTracking && (
-                    <div className="flex items-center space-x-2 p-2 bg-gray-50 rounded-lg">
-                      <div className="flex-shrink-0">
-                        <div className="h-4 w-4 rounded-full border-2 border-primary-500" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-medium text-gray-900 text-xs">
-                          3. Start {EYE_TRACKING_EXPERIMENT.DURATION_SECONDS}-Second Session
-                        </h3>
-                        <p className="text-xs text-gray-600">
-                          Ready to start - look at the image naturally for {EYE_TRACKING_EXPERIMENT.DURATION_SECONDS} seconds
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => {
-                          console.log('🎯 Start tracking button clicked')
-                          startTracking()
-                        }}
-                        className="btn btn-primary btn-sm text-xs px-2 py-1"
-                      >
-                        <Play className="h-3 w-3 mr-1" />
-                        Start
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Webcam Status */}
-                  <div className="flex items-center space-x-2 p-2 bg-blue-50 rounded-lg">
-                    <Camera className="h-4 w-4 text-blue-500" />
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-medium text-blue-900 text-xs">
-                        {isTracking ? 'Tracking Active' : 'Webcam Status'}
-                      </h3>
-                      <p className="text-xs text-blue-700">
-                        {isTracking 
-                          ? `Tracking your eye movements - ${timeRemaining}s remaining`
-                          : webcamPermission 
-                            ? 'Webcam access granted' 
-                            : 'Requesting webcam permission...'
-                        }
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Data Collection Status - Only show during tracking */}
-                  {isTracking && (
-                    <div className="flex items-center space-x-2 p-2 bg-green-50 rounded-lg">
-                      <div className="flex-shrink-0">
-                        <div className="h-4 w-4 rounded-full bg-green-500 animate-pulse" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-medium text-green-900 text-xs">
-                          Data Collection
-                        </h3>
-                        <p className="text-xs text-green-700">
-                          {gazeData.length} gaze points collected
-                          {gazeData.length > 0 && (
-                            <span className="ml-2">
-                              ({Math.round(gazeData.length / (EYE_TRACKING_EXPERIMENT.DURATION_SECONDS - timeRemaining))} pts/sec)
-                            </span>
-                          )}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {/* Success Header */}
-            <div className="text-center">
-              <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                Experiment Complete!
-              </h2>
-              <p className="text-gray-600 mb-6">
-                Your eye tracking data has been saved and analyzed.
-              </p>
-            </div>
-
-
-
-            {/* Results Display - Show if data was collected, otherwise show no data message */}
-            {processedData && processedData.gazePoints.length > 0 ? (
-              <div className="card">
-                <div className="card-header">
-                  <h2 className="card-title flex items-center space-x-2">
-                    <Eye className="h-5 w-5" />
-                    <span>Eye Tracking Results</span>
-                  </h2>
-                  <p className="card-description">
-                    Choose a visualization type to explore your eye movement patterns
-                  </p>
-                  
-                  {/* Data Quality Indicator */}
-                  <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium text-gray-700">Data Quality</span>
-                      <span className={`text-sm font-medium ${
-                        processedData.gazePoints.length > 100 ? 'text-green-600' : 
-                        processedData.gazePoints.length > 50 ? 'text-yellow-600' : 'text-red-600'
-                      }`}>
-                        {processedData.gazePoints.length > 100 ? 'Good' : 
-                         processedData.gazePoints.length > 50 ? 'Fair' : 'Poor'}
-                      </span>
-                    </div>
-                    <div className="text-xs text-gray-600 space-y-1">
-                      <div>Gaze points collected: {processedData.gazePoints.length}</div>
-                      <div>Fixations detected: {processedData.fixationPoints.length}</div>
-                      <div>Session duration: {Math.round(processedData.sessionDuration / 1000)}s</div>
-                      <div>Data rate: {Math.round(processedData.gazePoints.length / (processedData.sessionDuration / 1000))} points/sec</div>
-                    </div>
-                  </div>
-                </div>
-                <div className="card-content">
+              <div className="card-content p-2">
+                <div className="relative">
                   {getImageUrl ? (
-                    <EyeTrackingResults
-                      data={processedData}
-                      imageUrl={getImageUrl}
-                      imageWidth={800}
-                      imageHeight={600}
+                    <img
+                      ref={imageRef}
+                      src={getImageUrl}
+                      alt="Experiment image"
+                      className="w-full h-auto rounded-lg shadow-lg"
+                      style={{ 
+                        maxHeight: imageOrientation === 'portrait' ? '80vh' : '70vh', 
+                        objectFit: 'contain',
+                        width: '100%'
+                      }}
+                      onLoad={(e) => {
+                        detectImageOrientation(e.target as HTMLImageElement)
+                      }}
                     />
                   ) : (
-                    <div className="text-center py-8">
-                      <AlertCircle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
-                      <h3 className="text-lg font-medium text-gray-900 mb-2">
-                        Image Not Available
-                      </h3>
-                      <p className="text-gray-600 mb-4">
-                        Eye tracking data was collected but the image is not available for visualization.
-                      </p>
-                      <div className="bg-gray-50 p-4 rounded-lg">
-                        <h4 className="font-medium text-gray-900 mb-2">Data Summary</h4>
-                        <div className="text-sm text-gray-600 space-y-1">
-                          <div>Gaze points: {processedData.gazePoints.length}</div>
-                          <div>Fixations: {processedData.fixationPoints.length}</div>
-                          <div>Duration: {Math.round(processedData.sessionDuration / 1000)}s</div>
-                        </div>
+                    <div className="flex items-center justify-center h-64 bg-gray-100 rounded-lg">
+                      <div className="text-center">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto mb-2"></div>
+                        <p className="text-gray-500">Loading image...</p>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {isTracking && (
+                    <div className="absolute inset-0 pointer-events-none">
+                      <canvas
+                        ref={canvasRef}
+                        className="w-full h-full"
+                        style={{ position: 'absolute', top: 0, left: 0 }}
+                      />
+                      {/* Tracking indicator */}
+                      <div className="absolute top-4 right-4 bg-red-500 text-white px-3 py-1 rounded-full text-sm font-medium animate-pulse">
+                        🔴 Tracking Active ({gazeData.length} points)
                       </div>
                     </div>
                   )}
                 </div>
               </div>
-            ) : (
-              <div className="card">
-                <div className="card-content">
-                  <div className="text-center py-8">
-                    <AlertCircle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">
-                      No Data Collected
-                    </h3>
-                    <p className="text-gray-600 mb-4">
-                      No eye tracking data was collected during the session.
+            </div>
+          </div>
+
+          {/* Controls - Always on the right side */}
+          <div className="w-72 flex-shrink-0">
+            <div className="card">
+              <div className="card-header py-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="card-title text-lg">Experiment Controls</h2>
+                    <p className="card-description text-sm">
+                      Follow the steps to complete your eye tracking experiment
                     </p>
-                    <div className="text-sm text-gray-500">
-                      <p>This could happen if:</p>
-                      <ul className="list-disc list-inside mt-2 space-y-1">
-                        <li>Webcam permissions were denied</li>
-                        <li>Poor lighting conditions</li>
-                        <li>Face not detected properly</li>
-                        <li>Calibration failed</li>
-                      </ul>
-                    </div>
-                    <div className="mt-6">
-                      <button
-                        onClick={() => {
-                          setShowResults(false)
-                          setProcessedData(null)
-                          setGazeData([])
-                          setExperimentCreated(false)
-                          isCreatingExperimentRef.current = false
-                        }}
-                        className="btn btn-primary"
-                      >
-                        Try Again
-                      </button>
-                    </div>
                   </div>
+                  <button
+                    onClick={() => setDebugMode(!debugMode)}
+                    className="btn btn-outline btn-xs"
+                  >
+                    {debugMode ? 'Hide' : 'Show'} Debug
+                  </button>
                 </div>
               </div>
-            )}
+              <div className="card-content space-y-2 p-3">
+                {/* Step 1: Initialize */}
+                {!isInitialized && (
+                  <div className="flex items-center space-x-2 p-2 bg-gray-50 rounded-lg">
+                    <div className="flex-shrink-0">
+                      <div className="h-4 w-4 rounded-full border-2 border-gray-300" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-medium text-gray-900 text-xs">
+                        1. Initialize WebGazer
+                      </h3>
+                      <p className="text-xs text-gray-600">
+                        Setting up eye tracking system...
+                      </p>
+                    </div>
+                    <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                  </div>
+                )}
 
-            {/* Action Buttons - Only show when data was collected */}
-            {processedData && processedData.gazePoints.length > 0 && (
-              <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <button
-                  onClick={() => navigate(`/picture-experiments?pictureId=${pictureId}`)}
-                  className="btn btn-primary"
-                >
-                  View All Experiments for This Picture
-                </button>
-                <button
-                  onClick={() => {
-                    setShowResults(false)
-                    setProcessedData(null)
-                    setGazeData([])
-                    setExperimentCreated(false)
-                    isCreatingExperimentRef.current = false
-                  }}
-                  className="btn btn-outline"
-                >
-                  Run Another Experiment
-                </button>
+                {/* Step 2: Calibrate */}
+                {isInitialized && !isCalibrated && (
+                  <div className="flex items-center space-x-2 p-2 bg-gray-50 rounded-lg">
+                    <div className="flex-shrink-0">
+                      <div className="h-4 w-4 rounded-full border-2 border-blue-500" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-medium text-gray-900 text-xs">
+                        2. Calibrate System
+                      </h3>
+                      <p className="text-xs text-gray-600">
+                        Click to start calibration - look at the screen naturally for 10 seconds
+                      </p>
+                    </div>
+                    <button
+                      onClick={startCalibration}
+                      disabled={isCalibrating}
+                      className="btn btn-primary btn-sm text-xs px-2 py-1"
+                    >
+                      {isCalibrating ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <>
+                          <Play className="h-3 w-3 mr-1" />
+                          Start Calibration
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+
+                {/* Step 3: Start Experiment */}
+                {isCalibrated && !isTracking && (
+                  <div className="flex items-center space-x-2 p-2 bg-gray-50 rounded-lg">
+                    <div className="flex-shrink-0">
+                      <div className="h-4 w-4 rounded-full border-2 border-primary-500" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-medium text-gray-900 text-xs">
+                        3. Start {EYE_TRACKING_EXPERIMENT.DURATION_SECONDS}-Second Session
+                      </h3>
+                      <p className="text-xs text-gray-600">
+                        Ready to start - look at the image naturally for {EYE_TRACKING_EXPERIMENT.DURATION_SECONDS} seconds
+                      </p>
+                    </div>
+                    <button
+                      onClick={startTracking}
+                      className="btn btn-primary btn-sm text-xs px-2 py-1"
+                    >
+                      <Play className="h-3 w-3 mr-1" />
+                      Start
+                    </button>
+                  </div>
+                )}
+
+                {/* Step 4: Experiment Running */}
+                {isTracking && (
+                  <div className="flex items-center space-x-2 p-2 bg-green-50 rounded-lg border border-green-200">
+                    <div className="flex-shrink-0">
+                      <div className="h-4 w-4 rounded-full bg-green-500" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-medium text-green-900 text-xs">
+                        4. Experiment Running
+                      </h3>
+                      <p className="text-xs text-green-700">
+                        {timeRemaining}s remaining • {gazeData.length} points collected
+                      </p>
+                    </div>
+                    <Eye className="h-4 w-4 text-green-500" />
+                  </div>
+                )}
+
+                {/* Debug Panel */}
+                {debugMode && (
+                  <div className="mt-4 p-3 bg-gray-100 rounded-lg text-xs">
+                    <h4 className="font-medium mb-2">Debug Information</h4>
+                    <div className="space-y-1">
+                      <div>Initialized: {isInitialized ? '✅' : '❌'}</div>
+                      <div>Calibrated: {isCalibrated ? '✅' : '❌'}</div>
+                      <div>Tracking: {isTracking ? '✅' : '❌'}</div>
+                      <div>Calibrating: {isCalibrating ? '✅' : '❌'}</div>
+                      <div>Gaze Points: {gazeData.length}</div>
+                      {currentGazePoint && (
+                        <div>Current Gaze: ({Math.round(currentGazePoint.x)}, {Math.round(currentGazePoint.y)})</div>
+                      )}
+                      {calibrationResult && (
+                        <div>Calibration: {calibrationResult.pointsCollected} points, {calibrationResult.isValid ? 'Valid' : 'Invalid'}</div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-            
+            </div>
           </div>
-        )}
+        </div>
       </div>
     </div>
   )
