@@ -19,6 +19,86 @@ import { EyeTrackingResults } from '../components/EyeTrackingResults'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { webgazerManager, GazePoint, CalibrationResult } from '../utils/webgazerManager'
 
+// Fixation detection algorithm
+function detectFixations(gazePoints: GazePoint[]): Array<{
+  x: number
+  y: number
+  duration: number
+  startTime: number
+}> {
+  if (gazePoints.length < 2) return []
+  
+  const fixations: Array<{
+    x: number
+    y: number
+    duration: number
+    startTime: number
+  }> = []
+  
+  const MIN_FIXATION_DURATION = 100 // ms
+  const MAX_FIXATION_DISTANCE = 50 // pixels
+  const MIN_FIXATION_POINTS = 3
+  
+  let currentFixationStart = 0
+  let fixationPoints: GazePoint[] = []
+  
+  for (let i = 0; i < gazePoints.length; i++) {
+    const point = gazePoints[i]
+    
+    if (fixationPoints.length === 0) {
+      // Start new potential fixation
+      fixationPoints = [point]
+      currentFixationStart = point.timestamp
+    } else {
+      // Check if current point is within fixation threshold
+      const avgX = fixationPoints.reduce((sum, p) => sum + p.x, 0) / fixationPoints.length
+      const avgY = fixationPoints.reduce((sum, p) => sum + p.y, 0) / fixationPoints.length
+      const distance = Math.sqrt(Math.pow(point.x - avgX, 2) + Math.pow(point.y - avgY, 2))
+      
+      if (distance <= MAX_FIXATION_DISTANCE) {
+        // Point is within fixation area
+        fixationPoints.push(point)
+      } else {
+        // Fixation ended, check if it was valid
+        const duration = point.timestamp - currentFixationStart
+        if (duration >= MIN_FIXATION_DURATION && fixationPoints.length >= MIN_FIXATION_POINTS) {
+          const fixationX = fixationPoints.reduce((sum, p) => sum + p.x, 0) / fixationPoints.length
+          const fixationY = fixationPoints.reduce((sum, p) => sum + p.y, 0) / fixationPoints.length
+          
+          fixations.push({
+            x: fixationX,
+            y: fixationY,
+            duration,
+            startTime: currentFixationStart
+          })
+        }
+        
+        // Start new potential fixation
+        fixationPoints = [point]
+        currentFixationStart = point.timestamp
+      }
+    }
+  }
+  
+  // Check final fixation
+  if (fixationPoints.length >= MIN_FIXATION_POINTS) {
+    const duration = gazePoints[gazePoints.length - 1].timestamp - currentFixationStart
+    if (duration >= MIN_FIXATION_DURATION) {
+      const fixationX = fixationPoints.reduce((sum, p) => sum + p.x, 0) / fixationPoints.length
+      const fixationY = fixationPoints.reduce((sum, p) => sum + p.y, 0) / fixationPoints.length
+      
+      fixations.push({
+        x: fixationX,
+        y: fixationY,
+        duration,
+        startTime: currentFixationStart
+      })
+    }
+  }
+  
+  return fixations
+}
+
 interface EyeTrackingData {
   gazePoints: GazePoint[]
   fixationPoints: Array<{
@@ -224,7 +304,7 @@ export function EyeTrackingExperiment() {
       // Process and save results
       const processedData: EyeTrackingData = {
         gazePoints: collectedData,
-        fixationPoints: [], // TODO: Implement fixation detection
+        fixationPoints: detectFixations(collectedData),
         scanPath: collectedData,
         sessionDuration: EYE_TRACKING_EXPERIMENT.DURATION_SECONDS,
         heatmapData: null // TODO: Implement heatmap generation
@@ -359,16 +439,18 @@ export function EyeTrackingExperiment() {
                       Follow the steps to complete your eye tracking experiment
                     </p>
                   </div>
-                  <button
-                    onClick={async () => {
-                      const newDebugMode = !debugMode
-                      setDebugMode(newDebugMode)
-                      await webgazerManager.setDebugMode(newDebugMode)
-                    }}
-                    className="btn btn-outline btn-xs"
-                  >
-                    {debugMode ? 'Hide' : 'Show'} Debug
-                  </button>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={async () => {
+                        const newDebugMode = !debugMode
+                        setDebugMode(newDebugMode)
+                        await webgazerManager.setDebugMode(newDebugMode)
+                      }}
+                      className={`btn btn-xs ${debugMode ? 'btn-primary' : 'btn-outline'}`}
+                    >
+                      {debugMode ? '🔍 Debug On' : '🔍 Debug Off'}
+                    </button>
+                  </div>
                 </div>
               </div>
               <div className="card-content space-y-2 p-3">
