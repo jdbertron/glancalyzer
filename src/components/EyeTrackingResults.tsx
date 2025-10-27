@@ -225,7 +225,7 @@ export function EyeTrackingResults({
       </div>
 
       {/* Results Display */}
-      <div className="grid lg:grid-cols-2 gap-6">
+      <div className="max-w-4xl mx-auto">
         {/* Image with Overlay */}
         <div className="card">
           <div className="card-header">
@@ -249,7 +249,7 @@ export function EyeTrackingResults({
                 src={imageUrl}
                 alt="Analysis image"
                 className="w-full h-auto rounded-lg shadow-lg"
-                style={{ maxHeight: '500px', objectFit: 'contain' }}
+                style={{ maxHeight: '600px', objectFit: 'contain' }}
                 onLoad={() => {
                   if (imageRef.current && canvasRef.current) {
                     canvasRef.current.width = imageRef.current.offsetWidth
@@ -272,15 +272,13 @@ export function EyeTrackingResults({
           </div>
         </div>
 
-        {/* Statistics or Details */}
-        <div className="card">
-          <div className="card-header">
-            <h2 className="card-title">
-              {activeTab === 'stats' ? 'Session Statistics' : 'Details'}
-            </h2>
-          </div>
-          <div className="card-content">
-            {activeTab === 'stats' ? (
+        {/* Statistics Panel - Only show for stats tab */}
+        {activeTab === 'stats' && (
+          <div className="card mt-6">
+            <div className="card-header">
+              <h2 className="card-title">Session Statistics</h2>
+            </div>
+            <div className="card-content">
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="p-4 bg-blue-50 rounded-lg">
@@ -320,38 +318,9 @@ export function EyeTrackingResults({
                   </div>
                 </div>
               </div>
-            ) : activeTab === 'fixations' ? (
-              <div className="space-y-3">
-                <h3 className="font-medium text-gray-900">Fixation Details</h3>
-                {data.fixationPoints.map((fixation, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div>
-                      <div className="font-medium">Fixation {index + 1}</div>
-                      <div className="text-sm text-gray-600">
-                        Position: ({Math.round(fixation.x)}, {Math.round(fixation.y)})
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-medium">{Math.round(fixation.duration)}ms</div>
-                      <div className="text-sm text-gray-600">Duration</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <div className="text-gray-400 mb-4">
-                  {activeTab === 'heatmap' && <Map className="h-12 w-12 mx-auto" />}
-                  {activeTab === 'scanpath' && <Activity className="h-12 w-12 mx-auto" />}
-                </div>
-                <p className="text-gray-600">
-                  {activeTab === 'heatmap' && 'Heatmap visualization shows areas of high visual attention'}
-                  {activeTab === 'scanpath' && 'Scan path shows the trajectory of eye movements'}
-                </p>
-              </div>
-            )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Legend */}

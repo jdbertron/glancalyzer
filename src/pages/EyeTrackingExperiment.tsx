@@ -11,8 +11,7 @@ import {
   Eye, 
   AlertCircle, 
   CheckCircle,
-  Loader2,
-  X
+  Loader2
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { EYE_TRACKING_EXPERIMENT } from '../constants'
@@ -152,7 +151,7 @@ export function EyeTrackingExperiment() {
   }, [])
 
   // Start tracking
-  const startTracking = useCallback(() => {
+  const startTracking = useCallback(async () => {
     console.log('🎯 [React] Start tracking button clicked')
     
     if (!calibrationResult?.isValid) {
@@ -165,7 +164,7 @@ export function EyeTrackingExperiment() {
       setIsTracking(true)
       setTimeRemaining(EYE_TRACKING_EXPERIMENT.DURATION_SECONDS)
       
-      webgazerManager.startTracking()
+      await webgazerManager.startTracking()
       
       // Start countdown timer
       intervalRef.current = setInterval(() => {
@@ -241,11 +240,17 @@ export function EyeTrackingExperiment() {
       setShowResults(true)
       toast.success('Eye tracking session completed!')
       
+      // Stop webcam after experiment completion
+      await webgazerManager.stopWebcam()
+      
     } catch (error) {
       console.error('❌ [React] Failed to save experiment:', error)
       toast.error('Failed to save experiment results.')
       // Still show results even if saving failed
       setShowResults(true)
+      
+      // Stop webcam even if saving failed
+      await webgazerManager.stopWebcam()
     }
   }, [pictureId, userId, createExperiment, updateEyeTrackingResults])
 
@@ -288,50 +293,6 @@ export function EyeTrackingExperiment() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => navigate('/experiments')}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X className="h-6 w-6" />
-              </button>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">
-                  Eye Tracking Experiment
-                </h1>
-                <p className="text-gray-600">
-                  {picture.fileName} • {isTracking ? 'Tracking in progress...' : 'Ready to start'}
-                </p>
-              </div>
-            </div>
-            
-            {isTracking && (
-              <div className="flex items-center space-x-4">
-                <div className="text-right">
-                  <div className="text-2xl font-bold text-primary-600">
-                    {timeRemaining}s
-                  </div>
-                  <div className="text-sm text-gray-500">
-                    Time remaining
-                  </div>
-                </div>
-                <button
-                  onClick={stopTracking}
-                  className="btn btn-outline btn-sm"
-                >
-                  <Square className="h-4 w-4 mr-2" />
-                  Stop
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <div className="flex gap-4">
           {/* Image Display */}
@@ -399,7 +360,11 @@ export function EyeTrackingExperiment() {
                     </p>
                   </div>
                   <button
-                    onClick={() => setDebugMode(!debugMode)}
+                    onClick={async () => {
+                      const newDebugMode = !debugMode
+                      setDebugMode(newDebugMode)
+                      await webgazerManager.setDebugMode(newDebugMode)
+                    }}
                     className="btn btn-outline btn-xs"
                   >
                     {debugMode ? 'Hide' : 'Show'} Debug
@@ -482,19 +447,40 @@ export function EyeTrackingExperiment() {
 
                 {/* Step 4: Experiment Running */}
                 {isTracking && (
-                  <div className="flex items-center space-x-2 p-2 bg-green-50 rounded-lg border border-green-200">
-                    <div className="flex-shrink-0">
-                      <div className="h-4 w-4 rounded-full bg-green-500" />
+                  <div className="space-y-2">
+                    <div className="flex items-center space-x-2 p-2 bg-green-50 rounded-lg border border-green-200">
+                      <div className="flex-shrink-0">
+                        <div className="h-4 w-4 rounded-full bg-green-500" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-medium text-green-900 text-xs">
+                          4. Experiment Running
+                        </h3>
+                        <p className="text-xs text-green-700">
+                          {timeRemaining}s remaining • {gazeData.length} points collected
+                        </p>
+                      </div>
+                      <Eye className="h-4 w-4 text-green-500" />
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-medium text-green-900 text-xs">
-                        4. Experiment Running
-                      </h3>
-                      <p className="text-xs text-green-700">
-                        {timeRemaining}s remaining • {gazeData.length} points collected
-                      </p>
+                    
+                    {/* Timer and Stop Button */}
+                    <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg border border-red-200">
+                      <div className="text-center">
+                        <div className="text-2xl font-bold text-red-600">
+                          {timeRemaining}s
+                        </div>
+                        <div className="text-xs text-red-500">
+                          Time remaining
+                        </div>
+                      </div>
+                      <button
+                        onClick={stopTracking}
+                        className="btn btn-outline btn-sm"
+                      >
+                        <Square className="h-4 w-4 mr-2" />
+                        Stop
+                      </button>
                     </div>
-                    <Eye className="h-4 w-4 text-green-500" />
                   </div>
                 )}
 

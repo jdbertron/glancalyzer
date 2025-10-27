@@ -25,6 +25,7 @@ class WebGazerManager {
   private isCalibrating = false
   private isTracking = false
   private currentGazePoint: GazePoint | null = null
+  private debugMode = false
 
   // Initialize WebGazer once
   async initialize(): Promise<void> {
@@ -81,27 +82,29 @@ class WebGazerManager {
       await wg.begin()
       console.log('✅ [WebGazerManager] WebGazer started')
 
-      // Show video preview
-      await wg.showVideoPreview(true)
-      await wg.showPredictionPoints(false)
+      // Configure video and overlay visibility based on debug mode
+      await wg.showVideoPreview(this.debugMode)
+      await wg.showPredictionPoints(this.debugMode)
 
       // Wait for video element to be created
       await new Promise(resolve => setTimeout(resolve, 2000))
 
-      // Style the video element
-      const videoElement = document.getElementById('webgazerVideoFeed') as HTMLVideoElement
-      if (videoElement) {
-        videoElement.style.position = 'fixed'
-        videoElement.style.top = '10px'
-        videoElement.style.right = '10px'
-        videoElement.style.width = '120px'
-        videoElement.style.height = '90px'
-        videoElement.style.border = '1px solid #3b82f6'
-        videoElement.style.borderRadius = '4px'
-        videoElement.style.zIndex = '999'
-        videoElement.style.backgroundColor = '#000'
-        videoElement.style.opacity = '0.8'
-        console.log('🎥 [WebGazerManager] Video element styled')
+      // Style the video element only if debug mode is on
+      if (this.debugMode) {
+        const videoElement = document.getElementById('webgazerVideoFeed') as HTMLVideoElement
+        if (videoElement) {
+          videoElement.style.position = 'fixed'
+          videoElement.style.bottom = '20px'
+          videoElement.style.right = '20px'
+          videoElement.style.width = '120px'
+          videoElement.style.height = '90px'
+          videoElement.style.border = '1px solid #3b82f6'
+          videoElement.style.borderRadius = '4px'
+          videoElement.style.zIndex = '999'
+          videoElement.style.backgroundColor = '#000'
+          videoElement.style.opacity = '0.8'
+          console.log('🎥 [WebGazerManager] Video element styled for debug mode')
+        }
       }
 
       this.webgazer = wg
@@ -126,10 +129,10 @@ class WebGazerManager {
     this.isCalibrating = true
     this.calibrationData = []
 
-    // Ensure video is visible
+    // Ensure video visibility matches debug mode
     if (this.webgazer) {
-      await this.webgazer.showVideoPreview(true)
-      await this.webgazer.showPredictionPoints(false)
+      await this.webgazer.showVideoPreview(this.debugMode)
+      await this.webgazer.showPredictionPoints(this.debugMode)
     }
 
     // Auto-complete calibration after 10 seconds
@@ -180,7 +183,7 @@ class WebGazerManager {
   }
 
   // Start tracking
-  startTracking(): void {
+  async startTracking(): Promise<void> {
     if (!this.isInitialized) {
       throw new Error('WebGazer not initialized')
     }
@@ -189,11 +192,10 @@ class WebGazerManager {
     this.isTracking = true
     this.experimentData = []
 
-    // Ensure video is visible
-    const videoElement = document.getElementById('webgazerVideoFeed') as HTMLVideoElement
-    if (videoElement) {
-      videoElement.style.display = 'block'
-      videoElement.style.visibility = 'visible'
+    // Ensure video visibility matches debug mode
+    if (this.webgazer) {
+      await this.webgazer.showVideoPreview(this.debugMode)
+      await this.webgazer.showPredictionPoints(this.debugMode)
     }
   }
 
@@ -234,6 +236,51 @@ class WebGazerManager {
   // Check if tracking
   getTracking(): boolean {
     return this.isTracking
+  }
+
+  // Set debug mode
+  async setDebugMode(enabled: boolean): Promise<void> {
+    this.debugMode = enabled
+    console.log(`🔧 [WebGazerManager] Debug mode ${enabled ? 'enabled' : 'disabled'}`)
+    
+    if (this.webgazer) {
+      await this.webgazer.showVideoPreview(enabled)
+      await this.webgazer.showPredictionPoints(enabled)
+    }
+  }
+
+  // Get debug mode
+  getDebugMode(): boolean {
+    return this.debugMode
+  }
+
+  // Stop webcam without full cleanup (for experiment end)
+  async stopWebcam(): Promise<void> {
+    console.log('📹 [WebGazerManager] Stopping webcam...')
+    
+    if (this.webgazer) {
+      try {
+        await this.webgazer.pause()
+        await this.webgazer.showVideoPreview(false)
+        await this.webgazer.showPredictionPoints(false)
+      } catch (error) {
+        console.error('Error stopping webcam:', error)
+      }
+    }
+
+    // Stop all video tracks
+    const videoElements = document.querySelectorAll('video')
+    videoElements.forEach(videoElement => {
+      if (videoElement.srcObject) {
+        const stream = videoElement.srcObject as MediaStream
+        stream.getTracks().forEach(track => track.stop())
+        videoElement.srcObject = null
+      }
+    })
+
+    this.isTracking = false
+    this.isCalibrating = false
+    console.log('✅ [WebGazerManager] Webcam stopped')
   }
 
   // Cleanup
