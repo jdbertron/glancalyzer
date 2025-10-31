@@ -79,10 +79,10 @@ export function EyeTrackingResults({
       const displayedWidth = imageRef.current!.offsetWidth
       const displayedHeight = imageRef.current!.offsetHeight
       
-      // TEMPORARY: Scale by 10% to account for mapping issues
       // Scale coordinates from natural dimensions directly to canvas
-      const x = (point.x * 0.1 / imageWidth) * canvas.width
-      const y = (point.y * 0.1 / imageHeight) * canvas.height
+      // Coordinates are stored in natural image space (from experiment)
+      const x = (point.x / imageWidth) * canvas.width
+      const y = (point.y / imageHeight) * canvas.height
       
       // Debug: Log first few points to see actual coordinates
       if (index < 3) {
@@ -155,19 +155,42 @@ export function EyeTrackingResults({
     let validPoints = 0
     
     pathData.forEach((point, index) => {
-      // TEMPORARY: Scale by 10% to account for mapping issues
       // Scale coordinates from natural dimensions directly to canvas
-      const x = (point.x * 0.1 / imageWidth) * canvas.width
-      const y = (point.y * 0.1 / imageHeight) * canvas.height
+      // Coordinates are stored in natural image space (from experiment)
+      const x = (point.x / imageWidth) * canvas.width
+      const y = (point.y / imageHeight) * canvas.height
       
-      // Debug: Log first few points to see actual coordinates
-      if (index < 3) {
-        console.log(`🔍 [Scanpath] Point ${index}:`, {
-          originalNaturalCoords: { x: point.x, y: point.y },
-          naturalDimensions: { width: imageWidth, height: imageHeight },
-          canvasDimensions: { width: canvas.width, height: canvas.height },
-          finalCanvasCoords: { x, y }
+      // CRITICAL: Log first and last points in detail
+      const isFirstPoint = index === 0
+      const isLastPoint = index === pathData.length - 1
+      
+      if (isFirstPoint || isLastPoint || index < 3) {
+        console.log(`🔍 [Scanpath Results] Point ${index} (${isFirstPoint ? 'FIRST' : isLastPoint ? 'LAST' : 'early'}):`)
+        console.log('  Original natural coords (from stored data):', {
+          x: point.x,
+          y: point.y,
+          naturalXPercent: (point.x / imageWidth) * 100,
+          naturalYPercent: (point.y / imageHeight) * 100
         })
+        console.log('  Natural image dimensions:', {
+          width: imageWidth,
+          height: imageHeight
+        })
+        console.log('  Displayed image size (in results view):', {
+          width: imageRef.current!.offsetWidth,
+          height: imageRef.current!.offsetHeight
+        })
+        console.log('  Canvas dimensions:', {
+          width: canvas.width,
+          height: canvas.height
+        })
+        console.log('  Final canvas coordinates (where point is drawn):', {
+          x: x,
+          y: y,
+          canvasXPercent: (x / canvas.width) * 100,
+          canvasYPercent: (y / canvas.height) * 100
+        })
+        console.log('  Expected: First should be ~middle, Last should be ~top-left')
       }
       
       validPoints++
@@ -184,10 +207,10 @@ export function EyeTrackingResults({
 
     // Draw points with timing-based colors
     pathData.forEach((point, index) => {
-      // TEMPORARY: Scale by 10% to account for mapping issues
       // Scale coordinates from natural dimensions directly to canvas
-      const x = (point.x * 0.1 / imageWidth) * canvas.width
-      const y = (point.y * 0.1 / imageHeight) * canvas.height
+      // Coordinates are stored in natural image space (from experiment)
+      const x = (point.x / imageWidth) * canvas.width
+      const y = (point.y / imageHeight) * canvas.height
       
       ctx.beginPath()
       ctx.arc(x, y, 4, 0, 2 * Math.PI)

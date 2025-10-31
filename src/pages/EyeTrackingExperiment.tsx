@@ -132,6 +132,7 @@ export function EyeTrackingExperiment() {
   const [experimentResults, setExperimentResults] = useState<EyeTrackingData | null>(null)
   const [debugMode, setDebugMode] = useState(false)
   const [imageOrientation, setImageOrientation] = useState<'portrait' | 'landscape'>('landscape')
+  const [imageNaturalDimensions, setImageNaturalDimensions] = useState<{ width: number; height: number } | null>(null)
   
   // Refs
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
@@ -207,7 +208,7 @@ export function EyeTrackingExperiment() {
       setIsCalibrating(true)
       await webgazerManager.startCalibration()
       
-      toast.success('Calibrating... Look at the screen naturally for 15 seconds. Move your eyes around the screen.', {
+      toast.success('Calibrating... Look at all 4 screen corners, then the 4 image corners over the next 15 seconds.', {
         duration: 15000,
         style: {
           background: '#3b82f6',
@@ -390,6 +391,12 @@ export function EyeTrackingExperiment() {
         naturalHeight: imageElement.naturalHeight
       }
       
+      // Store natural dimensions for use in results view
+      setImageNaturalDimensions({
+        width: imageElement.naturalWidth,
+        height: imageElement.naturalHeight
+      })
+      
       console.log('  ✅ Using for mapping:', {
         position: `(${imageBounds.x}, ${imageBounds.y})`,
         displayedSize: `${imageBounds.width}x${imageBounds.height}`,
@@ -436,7 +443,58 @@ export function EyeTrackingExperiment() {
         // Step 2: Viewport -> Image
         const mappedPoint = webgazerManager.mapToImageCoordinates(viewportPoint, imageBounds)
         
-        // Detailed logging for first 3 points
+        // CRITICAL LOGGING: First point (should be middle of image) and last point (should be top-left)
+        const isFirstPoint = idx === 0
+        const isLastPoint = idx === collectedData.length - 1
+        
+        if (isFirstPoint || isLastPoint) {
+          console.log(`🔍 [CRITICAL] ${isFirstPoint ? 'FIRST' : 'LAST'} Point Analysis (idx=${idx}):`)
+          console.log('  1. Raw Webgazer coordinates:', {
+            x: point.x,
+            y: point.y,
+            timestamp: point.timestamp,
+            confidence: point.confidence
+          })
+          console.log('  2. Calibration domain used:', calDomain)
+          console.log('  3. Viewport dimensions:', {
+            width: viewportWidth,
+            height: viewportHeight
+          })
+          console.log('  4. After viewport mapping:', {
+            x: viewportPoint.x,
+            y: viewportPoint.y,
+            viewportXPercent: (viewportPoint.x / viewportWidth) * 100,
+            viewportYPercent: (viewportPoint.y / viewportHeight) * 100
+          })
+          console.log('  5. Image bounds used:', {
+            x: imageBounds.x,
+            y: imageBounds.y,
+            width: imageBounds.width,
+            height: imageBounds.height,
+            naturalWidth: imageBounds.naturalWidth,
+            naturalHeight: imageBounds.naturalHeight
+          })
+          console.log('  6. Final mapped coordinates (natural image space):', {
+            x: mappedPoint.x,
+            y: mappedPoint.y,
+            naturalXPercent: (mappedPoint.x / imageBounds.naturalWidth) * 100,
+            naturalYPercent: (mappedPoint.y / imageBounds.naturalHeight) * 100
+          })
+          console.log('  7. Expected location:', {
+            first: 'Should be near middle of image (~50%, ~50%)',
+            last: 'Should be near top-left corner (~0%, ~0%)'
+          })
+          console.log('  8. Relative position in image display area:', {
+            relativeX: (viewportPoint.x - imageBounds.x) / imageBounds.width,
+            relativeY: (viewportPoint.y - imageBounds.y) / imageBounds.height,
+            isInImageBounds: viewportPoint.x >= imageBounds.x && 
+                            viewportPoint.x <= imageBounds.x + imageBounds.width &&
+                            viewportPoint.y >= imageBounds.y && 
+                            viewportPoint.y <= imageBounds.y + imageBounds.height
+          })
+        }
+        
+        // Detailed logging for first 3 points (keep existing for compatibility)
         if (idx < 3) {
           // Calculate if viewport point is within image bounds
           const isInImageBounds = viewportPoint.x >= imageBounds.x && 
@@ -583,12 +641,16 @@ export function EyeTrackingExperiment() {
 
   // Show results if experiment completed
   if (showResults && experimentResults) {
+    // Use stored natural dimensions from when experiment was run, or fallback to image element
+    const naturalWidth = imageNaturalDimensions?.width || imageRef.current?.naturalWidth || 4032
+    const naturalHeight = imageNaturalDimensions?.height || imageRef.current?.naturalHeight || 3024
+    
     return (
       <EyeTrackingResults
         data={experimentResults}
         imageUrl={getImageUrl}
-        imageWidth={imageRef.current?.naturalWidth || 800}
-        imageHeight={imageRef.current?.naturalHeight || 600}
+        imageWidth={naturalWidth}
+        imageHeight={naturalHeight}
       />
     )
   }
@@ -697,7 +759,7 @@ export function EyeTrackingExperiment() {
                         2. Calibrate System
                       </h3>
                       <p className="text-xs text-gray-600">
-                        Click to start calibration - look at the screen naturally for 15 seconds
+                        Click to start calibration. For best results, look at all 4 corners of the screen, then the 4 corners of the image during the 15-second calibration period.
                       </p>
                     </div>
                     <div className="flex items-center space-x-2">

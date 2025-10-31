@@ -429,26 +429,11 @@ class WebGazerManager {
     const normalizedY = (gazePoint.y - calibrationDomain.minY) / webgazerYRange
     
     // Map normalized position to viewport coordinates
-    // This assumes calibration domain represents the full viewport range
+    // The calibration domain represents the range of Webgazer coordinates collected during calibration
+    // We assume during calibration the user looked at various screen locations that roughly cover the viewport
+    // So we map the normalized [0,1] position to viewport [0, viewportWidth/Height]
     let viewportX = normalizedX * viewportWidth
     let viewportY = normalizedY * viewportHeight
-    
-    // Account for calibration domain offset from viewport origin
-    // If calibration domain doesn't start at (0,0), we need to adjust
-    // The calibration domain represents where Webgazer thinks the viewport corners are
-    // So we can use the domain directly as a reference frame
-    
-    // Calculate the ratio between calibration span and viewport size
-    const calibrationToViewportXRatio = webgazerXRange / viewportWidth
-    const calibrationToViewportYRatio = webgazerYRange / viewportHeight
-    
-    // If calibration span is smaller than viewport, it means calibration didn't cover full viewport
-    // In this case, we should still map proportionally, but note that points outside
-    // the calibration range will be extrapolated
-    
-    // Additional adjustment: If calibration domain offset suggests Webgazer's origin
-    // is shifted, we can adjust for that offset
-    // However, since we're normalizing, the offset is already accounted for
     
     // Clamp to viewport bounds (but allow some extrapolation for points outside calibration range)
     // Instead of hard clamping, we'll allow extrapolation but log a warning
@@ -493,17 +478,6 @@ class WebGazerManager {
     // Map to natural image coordinates (proportional, not clamped - points outside bounds map proportionally)
     const mappedX = relativeX * imageBounds.naturalWidth
     const mappedY = relativeY * imageBounds.naturalHeight
-    
-    // Debug: Log the mapping result (only for first few points)
-    if (this.gazeData && this.gazeData.length < 3) {
-      console.log('🔍 [WebGazerManager] Mapped coordinates:', 
-        'original:', gazePoint.x, gazePoint.y,
-        'imageBounds:', imageBounds.x, imageBounds.y, imageBounds.width, imageBounds.height,
-        'relative:', relativeX, relativeY,
-        'mapped:', mappedX, mappedY,
-        'naturalDims:', imageBounds.naturalWidth, imageBounds.naturalHeight
-      )
-    }
     
     // Calculate confidence based on how close to image center the point is
     // Distance from center in displayed image pixels
