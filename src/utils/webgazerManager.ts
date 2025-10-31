@@ -415,18 +415,62 @@ class WebGazerManager {
     const webgazerXRange = calibrationDomain.maxX - calibrationDomain.minX
     const webgazerYRange = calibrationDomain.maxY - calibrationDomain.minY
     
-    // Map from Webgazer space to viewport space
-    const viewportX = webgazerXRange > 0
-      ? ((gazePoint.x - calibrationDomain.minX) / webgazerXRange) * viewportWidth
-      : viewportWidth / 2
+    if (webgazerXRange <= 0 || webgazerYRange <= 0) {
+      // Fallback to center if invalid range
+      return {
+        ...gazePoint,
+        x: viewportWidth / 2,
+        y: viewportHeight / 2,
+      }
+    }
     
-    const viewportY = webgazerYRange > 0
-      ? ((gazePoint.y - calibrationDomain.minY) / webgazerYRange) * viewportHeight
-      : viewportHeight / 2
+    // Calculate normalized position (0 to 1) within calibration domain
+    const normalizedX = (gazePoint.x - calibrationDomain.minX) / webgazerXRange
+    const normalizedY = (gazePoint.y - calibrationDomain.minY) / webgazerYRange
     
-    // Clamp to viewport bounds
-    const clampedX = Math.max(0, Math.min(viewportWidth, viewportX))
-    const clampedY = Math.max(0, Math.min(viewportHeight, viewportY))
+    // Map normalized position to viewport coordinates
+    // This assumes calibration domain represents the full viewport range
+    let viewportX = normalizedX * viewportWidth
+    let viewportY = normalizedY * viewportHeight
+    
+    // Account for calibration domain offset from viewport origin
+    // If calibration domain doesn't start at (0,0), we need to adjust
+    // The calibration domain represents where Webgazer thinks the viewport corners are
+    // So we can use the domain directly as a reference frame
+    
+    // Calculate the ratio between calibration span and viewport size
+    const calibrationToViewportXRatio = webgazerXRange / viewportWidth
+    const calibrationToViewportYRatio = webgazerYRange / viewportHeight
+    
+    // If calibration span is smaller than viewport, it means calibration didn't cover full viewport
+    // In this case, we should still map proportionally, but note that points outside
+    // the calibration range will be extrapolated
+    
+    // Additional adjustment: If calibration domain offset suggests Webgazer's origin
+    // is shifted, we can adjust for that offset
+    // However, since we're normalizing, the offset is already accounted for
+    
+    // Clamp to viewport bounds (but allow some extrapolation for points outside calibration range)
+    // Instead of hard clamping, we'll allow extrapolation but log a warning
+    const isExtrapolatedX = normalizedX < 0 || normalizedX > 1
+    const isExtrapolatedY = normalizedY < 0 || normalizedY > 1
+    
+    if (isExtrapolatedX || isExtrapolatedY) {
+      console.warn('⚠️ [WebGazerManager] Gaze point outside calibration domain:', {
+        gazePoint: { x: gazePoint.x, y: gazePoint.y },
+        calibrationDomain,
+        normalized: { x: normalizedX, y: normalizedY },
+        viewport: { x: viewportX, y: viewportY },
+        extrapolatedX: isExtrapolatedX,
+        extrapolatedY: isExtrapolatedY
+      })
+    }
+    
+    // Clamp to reasonable viewport bounds (allow 20% extrapolation)
+    const viewportMarginX = viewportWidth * 0.2
+    const viewportMarginY = viewportHeight * 0.2
+    const clampedX = Math.max(-viewportMarginX, Math.min(viewportWidth + viewportMarginX, viewportX))
+    const clampedY = Math.max(-viewportMarginY, Math.min(viewportHeight + viewportMarginY, viewportY))
     
     return {
       ...gazePoint,

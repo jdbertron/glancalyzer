@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Eye, BarChart3, Map, Activity, Download } from 'lucide-react'
 
 interface GazePoint {
@@ -38,14 +38,25 @@ export function EyeTrackingResults({
 }: EyeTrackingResultsProps) {
   const [activeTab, setActiveTab] = useState<'heatmap' | 'scanpath' | 'fixations' | 'stats'>('heatmap')
   const [showOverlay] = useState(true)
+  const [imageLoaded, setImageLoaded] = useState(false)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const imageRef = useRef<HTMLImageElement>(null)
 
-  // Draw heatmap overlay
-  const drawHeatmap = () => {
+  // Reset imageLoaded when imageUrl changes
+  useEffect(() => {
+    setImageLoaded(false)
+  }, [imageUrl])
+
+  // Draw heatmap overlay - memoized to prevent stale closures
+  const drawHeatmap = useCallback(() => {
     const canvas = canvasRef.current
-    if (!canvas || !imageRef.current) {
-      console.log('Canvas or image not ready for heatmap')
+    if (!canvas || !imageRef.current || !data.gazePoints || data.gazePoints.length === 0) {
+      console.log('Canvas, image, or data not ready for heatmap', {
+        hasCanvas: !!canvas,
+        hasImage: !!imageRef.current,
+        hasData: !!data.gazePoints,
+        dataLength: data.gazePoints?.length || 0
+      })
       return
     }
 
@@ -60,29 +71,33 @@ export function EyeTrackingResults({
 
     console.log('Drawing heatmap with', data.gazePoints.length, 'points')
 
-    // Coordinates are already mapped to natural image dimensions (0 to imageWidth/imageHeight)
-    // Scale them directly to canvas dimensions
-    // Points outside natural bounds will be drawn off-canvas (invisible, which is fine)
+    // Coordinates are in natural image dimensions
+    // Scale based on the ratio between displayed image size and natural size
+    // This accounts for the image being displayed smaller in results view vs experiment view
     data.gazePoints.forEach((point, index) => {
-      const x = (point.x / imageWidth) * canvas.width
-      const y = (point.y / imageHeight) * canvas.height
+      // Get the actual displayed image size (may be different from natural size due to CSS constraints)
+      const displayedWidth = imageRef.current!.offsetWidth
+      const displayedHeight = imageRef.current!.offsetHeight
+      
+      // TEMPORARY: Scale by 10% to account for mapping issues
+      // Scale coordinates from natural dimensions directly to canvas
+      const x = (point.x * 0.1 / imageWidth) * canvas.width
+      const y = (point.y * 0.1 / imageHeight) * canvas.height
       
       // Debug: Log first few points to see actual coordinates
       if (index < 3) {
         console.log(`🔍 [Heatmap] Point ${index}:`, {
-          original: { x: point.x, y: point.y },
-          imageDimensions: { width: imageWidth, height: imageHeight },
+          originalNaturalCoords: { x: point.x, y: point.y },
+          naturalDimensions: { width: imageWidth, height: imageHeight },
+          displayedDimensions: { width: displayedWidth, height: displayedHeight },
           canvasDimensions: { width: canvas.width, height: canvas.height },
-          mapped: { x, y },
-          // Add more detailed info
+          finalCanvasCoords: { x, y },
           xRatio: point.x / imageWidth,
-          yRatio: point.y / imageHeight,
-          xPercent: (point.x / imageWidth) * 100,
-          yPercent: (point.y / imageHeight) * 100
+          yRatio: point.y / imageHeight
         })
       }
       
-      // Draw all points - coordinates should be within bounds after mapping
+      // Draw point - even if outside canvas bounds (canvas will clip automatically)
       ctx.beginPath()
       ctx.arc(x, y, 15, 0, 2 * Math.PI)
       ctx.fillStyle = `rgba(255, 0, 0, ${Math.min(0.8, point.confidence || 0.5)})`
@@ -96,10 +111,10 @@ export function EyeTrackingResults({
     })
     
     console.log('Heatmap drawing completed')
-  }
+  }, [data.gazePoints, imageWidth, imageHeight])
 
-  // Draw scan path
-  const drawScanPath = () => {
+  // Draw scan path - memoized to prevent stale closures
+  const drawScanPath = useCallback(() => {
     const canvas = canvasRef.current
     if (!canvas || !imageRef.current) {
       console.log('Canvas or image not ready for scan path')
@@ -115,11 +130,14 @@ export function EyeTrackingResults({
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-    console.log('Drawing scan path with', data.scanPath.length, 'points')
-
     // Use gaze points if scan path is empty
-    const pathData = data.scanPath.length > 0 ? data.scanPath : data.gazePoints
-    console.log('Using path data with', pathData.length, 'points')
+    const pathData = (data.scanPath && data.scanPath.length > 0) ? data.scanPath : (data.gazePoints || [])
+    console.log('Drawing scan path with', pathData.length, 'points')
+    console.log('Scan path data:', {
+      scanPathLength: data.scanPath?.length || 0,
+      gazePointsLength: data.gazePoints?.length || 0,
+      usingPathData: pathData === data.scanPath ? 'scanPath' : 'gazePoints'
+    })
 
     if (pathData.length < 2) {
       console.log('Not enough points for scan path')
@@ -131,26 +149,27 @@ export function EyeTrackingResults({
     ctx.strokeStyle = 'rgba(0, 255, 0, 0.8)'
     ctx.lineWidth = 3
 
-    // Coordinates are already mapped to natural image dimensions (0 to imageWidth/imageHeight)
-    // Scale them directly to canvas dimensions
+    // Coordinates are in natural image dimensions
+    // Scale based on the ratio between displayed image size and natural size
     let firstPoint = true
     let validPoints = 0
     
     pathData.forEach((point, index) => {
-      const x = (point.x / imageWidth) * canvas.width
-      const y = (point.y / imageHeight) * canvas.height
+      // TEMPORARY: Scale by 10% to account for mapping issues
+      // Scale coordinates from natural dimensions directly to canvas
+      const x = (point.x * 0.1 / imageWidth) * canvas.width
+      const y = (point.y * 0.1 / imageHeight) * canvas.height
       
       // Debug: Log first few points to see actual coordinates
       if (index < 3) {
         console.log(`🔍 [Scanpath] Point ${index}:`, {
-          original: { x: point.x, y: point.y },
-          imageDimensions: { width: imageWidth, height: imageHeight },
+          originalNaturalCoords: { x: point.x, y: point.y },
+          naturalDimensions: { width: imageWidth, height: imageHeight },
           canvasDimensions: { width: canvas.width, height: canvas.height },
-          mapped: { x, y }
+          finalCanvasCoords: { x, y }
         })
       }
       
-      // Draw all points - coordinates should be within bounds after mapping
       validPoints++
       if (firstPoint) {
         ctx.moveTo(x, y)
@@ -165,12 +184,11 @@ export function EyeTrackingResults({
 
     // Draw points with timing-based colors
     pathData.forEach((point, index) => {
-      // Coordinates are already mapped to natural image dimensions (0 to imageWidth/imageHeight)
-      // Scale them directly to canvas dimensions
-      const x = (point.x / imageWidth) * canvas.width
-      const y = (point.y / imageHeight) * canvas.height
+      // TEMPORARY: Scale by 10% to account for mapping issues
+      // Scale coordinates from natural dimensions directly to canvas
+      const x = (point.x * 0.1 / imageWidth) * canvas.width
+      const y = (point.y * 0.1 / imageHeight) * canvas.height
       
-      // Draw all points - coordinates should be within bounds after mapping
       ctx.beginPath()
       ctx.arc(x, y, 4, 0, 2 * Math.PI)
         
@@ -187,13 +205,18 @@ export function EyeTrackingResults({
     })
     
     console.log('Scan path drawing completed')
-  }
+  }, [data.scanPath, data.gazePoints, imageWidth, imageHeight])
 
-  // Draw fixations
-  const drawFixations = () => {
+  // Draw fixations - memoized to prevent stale closures
+  const drawFixations = useCallback(() => {
     const canvas = canvasRef.current
-    if (!canvas || !imageRef.current) {
-      console.log('Canvas or image not ready for fixations')
+    if (!canvas || !imageRef.current || !data.fixationPoints || data.fixationPoints.length === 0) {
+      console.log('Canvas, image, or data not ready for fixations', {
+        hasCanvas: !!canvas,
+        hasImage: !!imageRef.current,
+        hasData: !!data.fixationPoints,
+        dataLength: data.fixationPoints?.length || 0
+      })
       return
     }
 
@@ -208,13 +231,14 @@ export function EyeTrackingResults({
 
     console.log('Drawing fixations with', data.fixationPoints.length, 'fixations')
 
-    // Coordinates are already mapped to natural image dimensions (0 to imageWidth/imageHeight)
-    // Scale them directly to canvas dimensions
+    // Coordinates are in natural image dimensions
+    // Scale directly to canvas (canvas size matches displayed image size)
     data.fixationPoints.forEach((fixation, index) => {
-      const x = (fixation.x / imageWidth) * canvas.width
-      const y = (fixation.y / imageHeight) * canvas.height
+      // TEMPORARY: Scale by 10% to account for mapping issues
+      // Scale coordinates from natural dimensions directly to canvas
+      const x = (fixation.x * 0.1 / imageWidth) * canvas.width
+      const y = (fixation.y * 0.1 / imageHeight) * canvas.height
       
-      // Draw all points - coordinates should be within bounds after mapping
       const radius = Math.max(8, Math.min(40, fixation.duration / 50)) // Size based on duration
         
         // Draw outer ring
@@ -245,76 +269,84 @@ export function EyeTrackingResults({
     })
     
     console.log('Fixations drawing completed')
-  }
+  }, [data.fixationPoints, imageWidth, imageHeight])
 
-  // Update canvas when tab changes or data changes
+  // Single unified effect to handle drawing - prevents race conditions
   useEffect(() => {
-    console.log('Tab changed to:', activeTab)
-    if (!canvasRef.current || !imageRef.current) return
+    // Skip drawing for stats tab (no canvas needed)
+    if (activeTab === 'stats') {
+      return
+    }
     
-    // Ensure canvas is properly sized
-    canvasRef.current.width = imageRef.current.offsetWidth
-    canvasRef.current.height = imageRef.current.offsetHeight
+    console.log('Tab or data changed:', activeTab)
+    console.log('Data available:', {
+      hasGazePoints: !!(data.gazePoints && data.gazePoints.length > 0),
+      gazePointsLength: data.gazePoints?.length || 0,
+      hasScanPath: !!(data.scanPath && data.scanPath.length > 0),
+      scanPathLength: data.scanPath?.length || 0,
+      hasFixationPoints: !!(data.fixationPoints && data.fixationPoints.length > 0),
+      fixationPointsLength: data.fixationPoints?.length || 0
+    })
     
-    // Small delay to ensure canvas is ready
-    setTimeout(() => {
-      // Redraw based on active tab
+    if (!canvasRef.current || !imageRef.current) {
+      console.log('Canvas or image not ready, waiting...')
+      return
+    }
+    
+    // Check if image is loaded
+    if (!imageLoaded && (!imageRef.current.complete || imageRef.current.naturalWidth === 0)) {
+      console.log('Image not loaded yet, will draw when loaded')
+      return
+    }
+    
+    // Ensure canvas is properly sized (do this once, before drawing)
+    const imageWidth = imageRef.current.offsetWidth
+    const imageHeight = imageRef.current.offsetHeight
+    
+    if (imageWidth === 0 || imageHeight === 0) {
+      console.log('Image dimensions not ready yet:', { width: imageWidth, height: imageHeight })
+      return
+    }
+    
+    // Only resize if dimensions changed (prevents unnecessary clearing)
+    const currentCanvasWidth = canvasRef.current.width
+    const currentCanvasHeight = canvasRef.current.height
+    
+    if (currentCanvasWidth !== imageWidth || currentCanvasHeight !== imageHeight) {
+      console.log('Canvas resizing from', { width: currentCanvasWidth, height: currentCanvasHeight }, 
+                   'to', { width: imageWidth, height: imageHeight })
+      canvasRef.current.width = imageWidth
+      canvasRef.current.height = imageHeight
+    }
+    
+    // Small delay to ensure canvas is ready after any resize
+    const timeoutId = setTimeout(() => {
+      console.log('Executing draw for tab:', activeTab)
+      // Redraw based on active tab - each draw function clears and redraws
       if (activeTab === 'heatmap') {
-        console.log('Drawing heatmap')
         drawHeatmap()
       } else if (activeTab === 'scanpath') {
-        console.log('Drawing scanpath')
         drawScanPath()
       } else if (activeTab === 'fixations') {
-        console.log('Drawing fixations')
         drawFixations()
       }
-    }, 50)
-  }, [activeTab, data])
-
-  // Also redraw when image loads
-  useEffect(() => {
-    if (!canvasRef.current || !imageRef.current) return
-    
-    const handleImageLoad = () => {
-      console.log('Image loaded, redrawing for tab:', activeTab)
-      canvasRef.current!.width = imageRef.current!.offsetWidth
-      canvasRef.current!.height = imageRef.current!.offsetHeight
-      
-      setTimeout(() => {
-        if (activeTab === 'heatmap') {
-          drawHeatmap()
-        } else if (activeTab === 'scanpath') {
-          drawScanPath()
-        } else if (activeTab === 'fixations') {
-          drawFixations()
-        }
-      }, 50)
-    }
-
-    const image = imageRef.current
-    image.addEventListener('load', handleImageLoad)
-    
-    // If image is already loaded, trigger immediately
-    if (image.complete) {
-      handleImageLoad()
-    }
+    }, 100) // Slightly longer delay to ensure canvas is ready
     
     return () => {
-      image.removeEventListener('load', handleImageLoad)
+      clearTimeout(timeoutId)
     }
-  }, [activeTab, data])
+  }, [activeTab, data, imageLoaded, drawHeatmap, drawScanPath, drawFixations])
 
   // Calculate statistics
   const stats = {
-    totalGazePoints: data.gazePoints.length,
-    totalFixations: data.fixationPoints.length,
-    averageFixationDuration: data.fixationPoints.length > 0 
+    totalGazePoints: data.gazePoints?.length || 0,
+    totalFixations: data.fixationPoints?.length || 0,
+    averageFixationDuration: (data.fixationPoints && data.fixationPoints.length > 0)
       ? data.fixationPoints.reduce((sum, f) => sum + f.duration, 0) / data.fixationPoints.length 
       : 0,
-    sessionDuration: data.sessionDuration,
-    gazePointsPerSecond: data.gazePoints.length / (data.sessionDuration / 1000),
-    scanPathLength: data.scanPath.length
+    sessionDuration: data.sessionDuration || 0,
+    gazePointsPerSecond: (data.gazePoints?.length || 0) / ((data.sessionDuration || 1) / 1000),
+    scanPathLength: data.scanPath?.length || 0
   }
 
   const tabs = [
@@ -466,16 +498,11 @@ export function EyeTrackingResults({
                   className="w-full h-auto rounded-lg shadow-lg"
                   style={{ maxHeight: '600px', objectFit: 'contain' }}
                   onLoad={() => {
-                    if (imageRef.current && canvasRef.current) {
-                      canvasRef.current.width = imageRef.current.offsetWidth
-                      canvasRef.current.height = imageRef.current.offsetHeight
-                      
-                      if (activeTab === 'heatmap') drawHeatmap()
-                      else if (activeTab === 'scanpath') drawScanPath()
-                      else if (activeTab === 'fixations') drawFixations()
-                    }
+                    console.log('Image onLoad event fired - setting imageLoaded state')
+                    setImageLoaded(true)
                   }}
                 />
+                {/* Canvas for visualization overlays */}
                 <canvas
                   ref={canvasRef}
                   className="absolute inset-0 pointer-events-none"

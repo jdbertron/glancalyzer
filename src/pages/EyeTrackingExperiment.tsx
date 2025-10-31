@@ -438,15 +438,50 @@ export function EyeTrackingExperiment() {
         
         // Detailed logging for first 3 points
         if (idx < 3) {
+          // Calculate if viewport point is within image bounds
+          const isInImageBounds = viewportPoint.x >= imageBounds.x && 
+                                 viewportPoint.x <= imageBounds.x + imageBounds.width &&
+                                 viewportPoint.y >= imageBounds.y && 
+                                 viewportPoint.y <= imageBounds.y + imageBounds.height
+          
+          // Calculate relative position in viewport
+          const viewportXPercent = (viewportPoint.x / viewportWidth) * 100
+          const viewportYPercent = (viewportPoint.y / viewportHeight) * 100
+          
+          // Calculate relative position within image display area
+          const relativeInImageX = (viewportPoint.x - imageBounds.x) / imageBounds.width
+          const relativeInImageY = (viewportPoint.y - imageBounds.y) / imageBounds.height
+          
           console.log(`📍 [React] Mapping point ${idx}:`, {
             webgazerOriginal: { x: point.x, y: point.y },
             calibrationDomain: calDomain,
-            viewportMapped: { x: viewportPoint.x, y: viewportPoint.y },
-            imageBounds: { x: imageBounds.x, y: imageBounds.y, width: imageBounds.width, height: imageBounds.height },
+            viewportMapped: { 
+              x: viewportPoint.x, 
+              y: viewportPoint.y,
+              xPercent: viewportXPercent.toFixed(1),
+              yPercent: viewportYPercent.toFixed(1)
+            },
+            imageBounds: { 
+              x: imageBounds.x, 
+              y: imageBounds.y, 
+              width: imageBounds.width, 
+              height: imageBounds.height,
+              rightEdge: imageBounds.x + imageBounds.width,
+              bottomEdge: imageBounds.y + imageBounds.height
+            },
+            viewportInImage: {
+              isInBounds: isInImageBounds,
+              relativeX: relativeInImageX.toFixed(3),
+              relativeY: relativeInImageY.toFixed(3),
+              distanceFromLeftEdge: (viewportPoint.x - imageBounds.x).toFixed(1),
+              distanceFromTopEdge: (viewportPoint.y - imageBounds.y).toFixed(1)
+            },
             finalMapped: { x: mappedPoint.x, y: mappedPoint.y },
             relativeToNatural: {
               xPercent: (mappedPoint.x / imageBounds.naturalWidth) * 100,
-              yPercent: (mappedPoint.y / imageBounds.naturalHeight) * 100
+              yPercent: (mappedPoint.y / imageBounds.naturalHeight) * 100,
+              exceedsWidth: mappedPoint.x > imageBounds.naturalWidth,
+              exceedsHeight: mappedPoint.y > imageBounds.naturalHeight
             }
           })
         }
