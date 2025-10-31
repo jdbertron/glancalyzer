@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { useAuth } from '../hooks/useAuth'
@@ -19,6 +19,35 @@ import {
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { EyeTrackingResults } from '../components/EyeTrackingResults'
 
+// Component that loads image dimensions and passes them to EyeTrackingResults
+function EyeTrackingResultsWithDimensions({ data, imageUrl }: { data: any, imageUrl: string }) {
+  const [imageDimensions, setImageDimensions] = useState<{ width: number, height: number } | null>(null)
+
+  useEffect(() => {
+    const img = new Image()
+    img.onload = () => {
+      setImageDimensions({
+        width: img.naturalWidth,
+        height: img.naturalHeight
+      })
+    }
+    img.src = imageUrl
+  }, [imageUrl])
+
+  if (!imageDimensions) {
+    return <LoadingSpinner />
+  }
+
+  return (
+    <EyeTrackingResults
+      data={data}
+      imageUrl={imageUrl}
+      imageWidth={imageDimensions.width}
+      imageHeight={imageDimensions.height}
+    />
+  )
+}
+
 export function ExperimentDetails() {
   const { experimentId } = useParams()
   const navigate = useNavigate()
@@ -26,7 +55,7 @@ export function ExperimentDetails() {
   
   const experiment = useQuery(
     api.experiments.getExperiment, 
-    experimentId ? { experimentId: experimentId as any, userId } : 'skip'
+    experimentId ? { experimentId: experimentId as any, userId: userId || undefined } : 'skip'
   )
   
   const picture = useQuery(
@@ -225,11 +254,9 @@ export function ExperimentDetails() {
               </p>
             </div>
             <div className="card-content">
-              <EyeTrackingResults
+              <EyeTrackingResultsWithDimensions
                 data={experiment.eyeTrackingData}
                 imageUrl={imageUrl}
-                imageWidth={800} // Default width, could be made dynamic
-                imageHeight={600} // Default height, could be made dynamic
               />
             </div>
           </div>

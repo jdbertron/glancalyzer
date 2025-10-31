@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useQuery, useMutation } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { useAuth } from '../hooks/useAuth'
-import { useSearchParams, useNavigate } from 'react-router-dom'
+import { useSearchParams, useNavigate, Link } from 'react-router-dom'
 import { 
   Camera, 
   Play, 
@@ -11,13 +11,14 @@ import {
   Eye, 
   AlertCircle, 
   CheckCircle,
-  Loader2
+  Loader2,
+  Lightbulb
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { EYE_TRACKING_EXPERIMENT } from '../constants'
 import { EyeTrackingResults } from '../components/EyeTrackingResults'
 import { LoadingSpinner } from '../components/LoadingSpinner'
-import { webgazerManager, GazePoint, CalibrationResult } from '../utils/webgazerManager'
+import { webgazerManager, GazePoint, CalibrationResult, ImageBounds } from '../utils/webgazerManager'
 
 // Fixation detection algorithm
 function detectFixations(gazePoints: GazePoint[]): Array<{
@@ -134,6 +135,7 @@ export function EyeTrackingExperiment() {
   
   // Refs
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
+  const isProcessingStopRef = useRef<boolean>(false)
   const imageRef = useRef<HTMLImageElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   
@@ -162,18 +164,21 @@ export function EyeTrackingExperiment() {
   // Add gaze listener
   useEffect(() => {
     const gazeListener = (data: GazePoint) => {
-      setCurrentGazePoint(data)
-      
-      if (isCalibrating) {
-        // Update calibration data display
-        console.log(`🔍 [React] Calibration point: (${Math.round(data.x)}, ${Math.round(data.y)})`)
-      }
-      
-      if (isTracking) {
-        // Update experiment data
-        setGazeData(prev => [...prev, data])
-        console.log(`👁️ [React] Gaze point: (${Math.round(data.x)}, ${Math.round(data.y)})`)
-      }
+      // Use requestAnimationFrame to avoid setState during render
+      requestAnimationFrame(() => {
+        setCurrentGazePoint(data)
+        
+        if (isCalibrating) {
+          // Update calibration data display
+          console.log(`🔍 [React] Calibration point: (${Math.round(data.x)}, ${Math.round(data.y)})`)
+        }
+        
+        if (isTracking) {
+          // Update experiment data
+          setGazeData(prev => [...prev, data])
+          console.log(`👁️ [React] Gaze point: (${Math.round(data.x)}, ${Math.round(data.y)})`)
+        }
+      })
     }
 
     webgazerManager.addGazeListener(gazeListener)
@@ -202,26 +207,43 @@ export function EyeTrackingExperiment() {
       setIsCalibrating(true)
       await webgazerManager.startCalibration()
       
-      toast.success('Calibrating... Look at the screen naturally for 10 seconds. Move your eyes around the screen.', {
-        duration: 10000,
+      toast.success('Calibrating... Look at the screen naturally for 15 seconds. Move your eyes around the screen.', {
+        duration: 15000,
         style: {
           background: '#3b82f6',
           color: 'white',
         }
       })
       
-      // Auto-validate after 10 seconds
+      // Auto-validate after 15 seconds
       setTimeout(() => {
         const result = webgazerManager.validateCalibration()
         setCalibrationResult(result)
         
         if (result.isValid) {
           setIsCalibrated(true)
-          toast.success(`Calibration complete! Collected ${result.pointsCollected} points with ${(result.averageConfidence * 100).toFixed(1)}% avg confidence.`)
+          let message = `Calibration complete! Collected ${result.pointsCollected} points with ${(result.averageConfidence * 100).toFixed(1)}% avg confidence.`
+          
+          // Add environmental feedback
+          if (result.lightingQuality === 'poor') {
+            message += ' ⚠️ Poor lighting detected - consider improving lighting conditions.'
+          } else if (result.lightingQuality === 'fair') {
+            message += ' ⚡ Fair lighting - results may be improved with better lighting.'
+          }
+          
+          if (result.eyeglassesDetected) {
+            message += ' 👓 Eyeglass reflections detected - consider adjusting glasses angle.'
+          }
+          
+          if (result.cameraPositioning === 'suboptimal') {
+            message += ' 📹 Camera positioning could be improved - ensure camera is at eye level and centered.'
+          }
+          
+          toast.success(message)
         } else {
           toast.error(`Calibration failed: ${result.errorMessage}`)
         }
-      }, 10000)
+      }, 15000)
       
     } catch (error) {
       console.error('❌ [React] Calibration failed:', error)
@@ -241,6 +263,8 @@ export function EyeTrackingExperiment() {
     
     try {
       setGazeData([])
+      // Reset processing flag when starting
+      isProcessingStopRef.current = false
       setIsTracking(true)
       setTimeRemaining(EYE_TRACKING_EXPERIMENT.DURATION_SECONDS)
       
@@ -251,6 +275,7 @@ export function EyeTrackingExperiment() {
         setTimeRemaining((prev: number) => {
           if (prev <= 1) {
             clearInterval(intervalRef.current!)
+            console.log('⏰ [React] Timer reached zero, calling stopTracking()')
             stopTracking()
             return 0
           }
@@ -270,8 +295,31 @@ export function EyeTrackingExperiment() {
   const stopTracking = useCallback(async () => {
     console.log('🛑 [React] Stop tracking called')
     
+    // Check if interval was running (timer-triggered call) before clearing it
+    const wasTimerRunning = intervalRef.current !== null
+    
+    // Clear the interval first to prevent the timer from firing again
+    // This must happen before any guards, especially for timer-triggered stops
     if (intervalRef.current) {
       clearInterval(intervalRef.current)
+      intervalRef.current = null
+    }
+    
+    // Guard against duplicate processing using a ref (avoids stale state issues)
+    if (isProcessingStopRef.current) {
+      console.log('  ⚠️ Already processing stop, ignoring duplicate call')
+      return
+    }
+    
+    // Mark as processing immediately to prevent duplicate calls
+    isProcessingStopRef.current = true
+    
+    // If timer was running, we should proceed even if isTracking seems false (stale closure)
+    // If timer wasn't running and we're not tracking, it's a duplicate call
+    if (!isTracking && !wasTimerRunning) {
+      console.log('  ⚠️ Not tracking and timer not running, resetting and returning')
+      isProcessingStopRef.current = false
+      return
     }
     
     setIsTracking(false)
@@ -285,14 +333,145 @@ export function EyeTrackingExperiment() {
     }
     
     try {
+      // Get image bounds for coordinate mapping
+      const imageElement = imageRef.current
+      if (!imageElement) {
+        toast.error('Image element not found. Cannot process gaze data.')
+        return
+      }
+      
+      const imageRect = imageElement.getBoundingClientRect()
+      
+      // Get parent container info for debugging
+      const parent = imageElement.parentElement
+      const parentRect = parent ? parent.getBoundingClientRect() : null
+      
+      // Log detailed image bounds information in separate statements for console export visibility
+      console.log('🖼️ [React] Image bounds - DETAILED:')
+      console.log('  getBoundingClientRect():', 
+        `left=${imageRect.left}, top=${imageRect.top}, width=${imageRect.width}, height=${imageRect.height}`)
+      console.log('  offsetWidth/offsetHeight (CSS rendered):', 
+        `width=${imageElement.offsetWidth}, height=${imageElement.offsetHeight}`)
+      console.log('  naturalWidth/naturalHeight (actual image):', 
+        `width=${imageElement.naturalWidth}, height=${imageElement.naturalHeight}`)
+      if (parentRect) {
+        console.log('  Parent container getBoundingClientRect():', 
+          `left=${parentRect.left}, top=${parentRect.top}, width=${parentRect.width}, height=${parentRect.height}`)
+      }
+      console.log('  Viewport:', 
+        `innerWidth=${window.innerWidth}, innerHeight=${window.innerHeight}, devicePixelRatio=${window.devicePixelRatio}`)
+      const computedStyle = window.getComputedStyle(imageElement)
+      console.log('  Computed CSS:', 
+        `width=${computedStyle.width}, height=${computedStyle.height}, objectFit=${computedStyle.objectFit}`)
+      
+      // Calculate differences for debugging
+      console.log('  🔍 DIFFERENCES:')
+      console.log(`    getBoundingClientRect width vs offsetWidth: ${imageRect.width} vs ${imageElement.offsetWidth} (diff: ${Math.abs(imageRect.width - imageElement.offsetWidth)})`)
+      console.log(`    getBoundingClientRect height vs offsetHeight: ${imageRect.height} vs ${imageElement.offsetHeight} (diff: ${Math.abs(imageRect.height - imageElement.offsetHeight)})`)
+      if (parentRect) {
+        console.log(`    Image left relative to parent: ${imageRect.left - parentRect.left}px`)
+        console.log(`    Image top relative to parent: ${imageRect.top - parentRect.top}px`)
+      }
+      
+      // Check for CSS transforms that might affect getBoundingClientRect
+      const transform = window.getComputedStyle(imageElement).transform
+      if (transform && transform !== 'none') {
+        console.log(`  ⚠️ WARNING: Image has CSS transform: ${transform}`)
+      }
+      
+      // Use offsetWidth/offsetHeight for the displayed size (matches what devtools shows)
+      // But use getBoundingClientRect() for position (viewport coordinates)
+      const imageBounds: ImageBounds = {
+        x: imageRect.left,
+        y: imageRect.top,
+        width: imageElement.offsetWidth,  // Use offsetWidth instead of getBoundingClientRect().width
+        height: imageElement.offsetHeight, // Use offsetHeight instead of getBoundingClientRect().height
+        naturalWidth: imageElement.naturalWidth,
+        naturalHeight: imageElement.naturalHeight
+      }
+      
+      console.log('  ✅ Using for mapping:', {
+        position: `(${imageBounds.x}, ${imageBounds.y})`,
+        displayedSize: `${imageBounds.width}x${imageBounds.height}`,
+        naturalSize: `${imageBounds.naturalWidth}x${imageBounds.naturalHeight}`
+      })
+      
+      // Get viewport dimensions
+      const viewportWidth = window.innerWidth
+      const viewportHeight = window.innerHeight
+      
+      // Get calibration domain (Webgazer's coordinate space)
+      const calDomain = webgazerManager.getCalibrationDomain()
+      
+      if (!calDomain) {
+        toast.error('No calibration data available. Please calibrate first.')
+        return
+      }
+      
+      console.log('📊 [React] Coordinate system analysis:', {
+        viewportDimensions: { width: viewportWidth, height: viewportHeight },
+        calibrationDomain: calDomain,
+        imageBounds: {
+          x: imageBounds.x,
+          y: imageBounds.y,
+          width: imageBounds.width,
+          height: imageBounds.height,
+          naturalWidth: imageBounds.naturalWidth,
+          naturalHeight: imageBounds.naturalHeight,
+        },
+        note: 'Webgazer coordinates will be mapped to viewport, then to image'
+      })
+      
+      // Two-step mapping:
+      // 1. Map Webgazer coordinates (calibration domain) to viewport coordinates
+      // 2. Map viewport coordinates to natural image coordinates
+      const mappedGazePoints = collectedData.map((point, idx) => {
+        // Step 1: Webgazer -> Viewport
+        const viewportPoint = webgazerManager.mapWebgazerToViewport(
+          point,
+          calDomain,
+          viewportWidth,
+          viewportHeight
+        )
+        // Step 2: Viewport -> Image
+        const mappedPoint = webgazerManager.mapToImageCoordinates(viewportPoint, imageBounds)
+        
+        // Detailed logging for first 3 points
+        if (idx < 3) {
+          console.log(`📍 [React] Mapping point ${idx}:`, {
+            webgazerOriginal: { x: point.x, y: point.y },
+            calibrationDomain: calDomain,
+            viewportMapped: { x: viewportPoint.x, y: viewportPoint.y },
+            imageBounds: { x: imageBounds.x, y: imageBounds.y, width: imageBounds.width, height: imageBounds.height },
+            finalMapped: { x: mappedPoint.x, y: mappedPoint.y },
+            relativeToNatural: {
+              xPercent: (mappedPoint.x / imageBounds.naturalWidth) * 100,
+              yPercent: (mappedPoint.y / imageBounds.naturalHeight) * 100
+            }
+          })
+        }
+        
+        return mappedPoint
+      })
+      
+      // Validate gaze data quality
+      const validation = webgazerManager.validateGazeData(mappedGazePoints)
+      
+      if (!validation.isValid) {
+        toast.error(`Gaze data quality issues: ${validation.issues.join(', ')}`)
+        console.warn('Gaze data validation failed:', validation.issues)
+      }
+      
       // Create experiment
       const experimentResponse = await createExperiment({
         pictureId: pictureId as any,
         userId: userId || undefined,
-        experimentType: 'eye-tracking',
+        experimentType: 'Eye Tracking',
         parameters: {
           duration: EYE_TRACKING_EXPERIMENT.DURATION_SECONDS,
-          gazeDataCount: collectedData.length
+          gazeDataCount: validation.validPoints.length,
+          originalGazeDataCount: collectedData.length,
+          validationIssues: validation.issues
         }
       })
       
@@ -301,11 +480,11 @@ export function EyeTrackingExperiment() {
         ? experimentResponse 
         : experimentResponse.experimentId
       
-      // Process and save results
+      // Process and save results with validated data
       const processedData: EyeTrackingData = {
-        gazePoints: collectedData,
-        fixationPoints: detectFixations(collectedData),
-        scanPath: collectedData,
+        gazePoints: validation.validPoints,
+        fixationPoints: detectFixations(validation.validPoints),
+        scanPath: validation.validPoints,
         sessionDuration: EYE_TRACKING_EXPERIMENT.DURATION_SECONDS,
         heatmapData: null // TODO: Implement heatmap generation
       }
@@ -318,7 +497,12 @@ export function EyeTrackingExperiment() {
       
       setExperimentResults(processedData)
       setShowResults(true)
-      toast.success('Eye tracking session completed!')
+      
+      const successMessage = validation.isValid 
+        ? `Eye tracking completed! Collected ${validation.validPoints.length} valid gaze points.`
+        : `Eye tracking completed with issues. Collected ${validation.validPoints.length} valid points (${validation.issues.length} issues detected).`
+      
+      toast.success(successMessage)
       
       // Stop webcam after experiment completion
       await webgazerManager.stopWebcam()
@@ -331,8 +515,11 @@ export function EyeTrackingExperiment() {
       
       // Stop webcam even if saving failed
       await webgazerManager.stopWebcam()
+    } finally {
+      // Reset processing flag
+      isProcessingStopRef.current = false
     }
-  }, [pictureId, userId, createExperiment, updateEyeTrackingResults])
+  }, [pictureId, userId, createExperiment, updateEyeTrackingResults, isTracking])
 
   // Detect image orientation
   const detectImageOrientation = useCallback((img: HTMLImageElement) => {
@@ -372,30 +559,22 @@ export function EyeTrackingExperiment() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-        <div className="flex gap-4">
+    <div className="h-screen bg-gray-50">
+      <div className="w-full mx-auto px-2 lg:px-4 py-2">
+        <div className="flex gap-2">
           {/* Image Display */}
           <div className="flex-1">
             <div className="card">
-              <div className="card-header">
-                <h2 className="card-title">Image to Analyze</h2>
-                <p className="card-description">
-                  Look at this image naturally during the experiment
-                </p>
-              </div>
-              <div className="card-content p-2">
-                <div className="relative">
+              <div className="card-content p-0">
+                <div className="relative" style={{ height: 'calc(100vh - 140px)' }}>
                   {getImageUrl ? (
                     <img
                       ref={imageRef}
                       src={getImageUrl}
                       alt="Experiment image"
-                      className="w-full h-auto rounded-lg shadow-lg"
+                      className="w-full h-full rounded-lg shadow-lg"
                       style={{ 
-                        maxHeight: imageOrientation === 'portrait' ? '80vh' : '70vh', 
-                        objectFit: 'contain',
-                        width: '100%'
+                        objectFit: 'contain'
                       }}
                       onLoad={(e) => {
                         detectImageOrientation(e.target as HTMLImageElement)
@@ -483,23 +662,32 @@ export function EyeTrackingExperiment() {
                         2. Calibrate System
                       </h3>
                       <p className="text-xs text-gray-600">
-                        Click to start calibration - look at the screen naturally for 10 seconds
+                        Click to start calibration - look at the screen naturally for 15 seconds
                       </p>
                     </div>
-                    <button
-                      onClick={startCalibration}
-                      disabled={isCalibrating}
-                      className="btn btn-primary btn-sm text-xs px-2 py-1"
-                    >
-                      {isCalibrating ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : (
-                        <>
-                          <Play className="h-3 w-3 mr-1" />
-                          Start Calibration
-                        </>
-                      )}
-                    </button>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={startCalibration}
+                        disabled={isCalibrating}
+                        className="btn btn-primary btn-sm text-xs px-2 py-1"
+                      >
+                        {isCalibrating ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <>
+                            <Play className="h-3 w-3 mr-1" />
+                            Start Calibration
+                          </>
+                        )}
+                      </button>
+                      <Link
+                        to="/tips"
+                        className="btn btn-outline btn-sm text-xs px-2 py-1 flex items-center space-x-1"
+                      >
+                        <Lightbulb className="h-3 w-3" />
+                        <span>Tips</span>
+                      </Link>
+                    </div>
                   </div>
                 )}
 
@@ -580,7 +768,27 @@ export function EyeTrackingExperiment() {
                         <div>Current Gaze: ({Math.round(currentGazePoint.x)}, {Math.round(currentGazePoint.y)})</div>
                       )}
                       {calibrationResult && (
-                        <div>Calibration: {calibrationResult.pointsCollected} points, {calibrationResult.isValid ? 'Valid' : 'Invalid'}</div>
+                        <div className="space-y-2">
+                          <div>Calibration: {calibrationResult.pointsCollected} points, {calibrationResult.isValid ? 'Valid' : 'Invalid'}</div>
+                          {calibrationResult.lightingQuality && (
+                            <div className={`text-sm ${
+                              calibrationResult.lightingQuality === 'good' ? 'text-green-600' :
+                              calibrationResult.lightingQuality === 'fair' ? 'text-yellow-600' : 'text-red-600'
+                            }`}>
+                              Lighting: {calibrationResult.lightingQuality}
+                            </div>
+                          )}
+                          {calibrationResult.eyeglassesDetected && (
+                            <div className="text-sm text-orange-600">⚠️ Eyeglass reflections detected</div>
+                          )}
+                          {calibrationResult.cameraPositioning && (
+                            <div className={`text-sm ${
+                              calibrationResult.cameraPositioning === 'optimal' ? 'text-green-600' : 'text-yellow-600'
+                            }`}>
+                              Camera: {calibrationResult.cameraPositioning}
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>

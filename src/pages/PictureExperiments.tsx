@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { useSearchParams, useNavigate } from 'react-router-dom'
@@ -15,6 +15,36 @@ import {
 } from 'lucide-react'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { EyeTrackingResults } from '../components/EyeTrackingResults'
+
+// Component that loads image dimensions and passes them to EyeTrackingResults
+function EyeTrackingResultsWithDimensions({ data, imageUrl }: { data: any, imageUrl: string }) {
+  const [imageDimensions, setImageDimensions] = useState<{ width: number, height: number } | null>(null)
+  const imageRef = useRef<HTMLImageElement>(null)
+
+  useEffect(() => {
+    const img = new Image()
+    img.onload = () => {
+      setImageDimensions({
+        width: img.naturalWidth,
+        height: img.naturalHeight
+      })
+    }
+    img.src = imageUrl
+  }, [imageUrl])
+
+  if (!imageDimensions) {
+    return <LoadingSpinner />
+  }
+
+  return (
+    <EyeTrackingResults
+      data={data}
+      imageUrl={imageUrl}
+      imageWidth={imageDimensions.width}
+      imageHeight={imageDimensions.height}
+    />
+  )
+}
 
 export function PictureExperiments() {
   const [searchParams] = useSearchParams()
@@ -296,11 +326,9 @@ export function PictureExperiments() {
                         {(() => {
                           try {
                             return (
-                              <EyeTrackingResults
+                              <EyeTrackingResultsWithDimensions
                                 data={experiment.eyeTrackingData}
                                 imageUrl={imageUrl}
-                                imageWidth={800}
-                                imageHeight={600}
                               />
                             )
                           } catch (error) {

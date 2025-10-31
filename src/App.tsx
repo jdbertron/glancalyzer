@@ -15,6 +15,7 @@ import { PictureExperiments } from './pages/PictureExperiments'
 import { EyeTrackingExperiment } from './pages/EyeTrackingExperiment'
 import { MyPictures } from './pages/MyPictures'
 import { Profile } from './pages/Profile'
+import { EyeTrackingTips } from './pages/EyeTrackingTips'
 import { LoadingSpinner } from './components/LoadingSpinner'
 import { ErrorBoundary } from './components/ErrorBoundary'
 
@@ -49,6 +50,7 @@ function App() {
             </ErrorBoundary>
           } />
           <Route path="/eye-tracking-experiment" element={<EyeTrackingExperiment />} />
+          <Route path="/tips" element={<EyeTrackingTips />} />
           <Route path="/profile" element={<Profile />} />
         </Routes>
       </main>

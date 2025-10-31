@@ -76,7 +76,8 @@ export default defineSchema({
       scanPath: v.optional(v.array(v.object({
         x: v.number(),
         y: v.number(),
-        timestamp: v.number()
+        timestamp: v.number(),
+        confidence: v.optional(v.number())
       }))),
       sessionDuration: v.optional(v.number()),
       calibrationData: v.optional(v.any())

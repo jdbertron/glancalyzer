@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Upload, User, LogOut, Home, BarChart3, Image } from 'lucide-react'
+import { Upload, User, LogOut, Home, BarChart3, Image, Lightbulb } from 'lucide-react'
 import { Id } from '../../convex/_generated/dataModel'
 
 interface NavbarProps {
@@ -19,6 +19,14 @@ export function Navbar({ user }: NavbarProps) {
           </div>
 
           <div className="flex items-center space-x-4">
+            <Link
+              to="/tips"
+              className="btn btn-outline btn-sm flex items-center space-x-2"
+            >
+              <Lightbulb className="h-4 w-4" />
+              <span>Tips</span>
+            </Link>
+            
             <Link
               to="/upload"
               className="btn btn-primary btn-sm flex items-center space-x-2"

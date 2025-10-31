@@ -60,25 +60,39 @@ export function EyeTrackingResults({
 
     console.log('Drawing heatmap with', data.gazePoints.length, 'points')
 
-    // Draw gaze points as circles with proper image coordinates
+    // Coordinates are already mapped to natural image dimensions (0 to imageWidth/imageHeight)
+    // Scale them directly to canvas dimensions
+    // Points outside natural bounds will be drawn off-canvas (invisible, which is fine)
     data.gazePoints.forEach((point, index) => {
-      // Map screen coordinates to image coordinates
-      const x = (point.x / window.innerWidth) * canvas.width
-      const y = (point.y / window.innerHeight) * canvas.height
+      const x = (point.x / imageWidth) * canvas.width
+      const y = (point.y / imageHeight) * canvas.height
       
-      // Only draw if point is within image bounds
-      if (x >= 0 && x <= canvas.width && y >= 0 && y <= canvas.height) {
-        ctx.beginPath()
-        ctx.arc(x, y, 15, 0, 2 * Math.PI)
-        ctx.fillStyle = `rgba(255, 0, 0, ${Math.min(0.8, point.confidence || 0.5)})`
-        ctx.fill()
-        
-        // Add subtle glow effect
-        ctx.beginPath()
-        ctx.arc(x, y, 25, 0, 2 * Math.PI)
-        ctx.fillStyle = `rgba(255, 0, 0, ${Math.min(0.3, (point.confidence || 0.5) * 0.3)})`
-        ctx.fill()
+      // Debug: Log first few points to see actual coordinates
+      if (index < 3) {
+        console.log(`🔍 [Heatmap] Point ${index}:`, {
+          original: { x: point.x, y: point.y },
+          imageDimensions: { width: imageWidth, height: imageHeight },
+          canvasDimensions: { width: canvas.width, height: canvas.height },
+          mapped: { x, y },
+          // Add more detailed info
+          xRatio: point.x / imageWidth,
+          yRatio: point.y / imageHeight,
+          xPercent: (point.x / imageWidth) * 100,
+          yPercent: (point.y / imageHeight) * 100
+        })
       }
+      
+      // Draw all points - coordinates should be within bounds after mapping
+      ctx.beginPath()
+      ctx.arc(x, y, 15, 0, 2 * Math.PI)
+      ctx.fillStyle = `rgba(255, 0, 0, ${Math.min(0.8, point.confidence || 0.5)})`
+      ctx.fill()
+      
+      // Add subtle glow effect
+      ctx.beginPath()
+      ctx.arc(x, y, 25, 0, 2 * Math.PI)
+      ctx.fillStyle = `rgba(255, 0, 0, ${Math.min(0.3, (point.confidence || 0.5) * 0.3)})`
+      ctx.fill()
     })
     
     console.log('Heatmap drawing completed')
@@ -117,22 +131,32 @@ export function EyeTrackingResults({
     ctx.strokeStyle = 'rgba(0, 255, 0, 0.8)'
     ctx.lineWidth = 3
 
+    // Coordinates are already mapped to natural image dimensions (0 to imageWidth/imageHeight)
+    // Scale them directly to canvas dimensions
     let firstPoint = true
     let validPoints = 0
     
     pathData.forEach((point, index) => {
-      const x = (point.x / window.innerWidth) * canvas.width
-      const y = (point.y / window.innerHeight) * canvas.height
+      const x = (point.x / imageWidth) * canvas.width
+      const y = (point.y / imageHeight) * canvas.height
       
-      // Only draw if point is within image bounds
-      if (x >= 0 && x <= canvas.width && y >= 0 && y <= canvas.height) {
-        validPoints++
-        if (firstPoint) {
-          ctx.moveTo(x, y)
-          firstPoint = false
-        } else {
-          ctx.lineTo(x, y)
-        }
+      // Debug: Log first few points to see actual coordinates
+      if (index < 3) {
+        console.log(`🔍 [Scanpath] Point ${index}:`, {
+          original: { x: point.x, y: point.y },
+          imageDimensions: { width: imageWidth, height: imageHeight },
+          canvasDimensions: { width: canvas.width, height: canvas.height },
+          mapped: { x, y }
+        })
+      }
+      
+      // Draw all points - coordinates should be within bounds after mapping
+      validPoints++
+      if (firstPoint) {
+        ctx.moveTo(x, y)
+        firstPoint = false
+      } else {
+        ctx.lineTo(x, y)
       }
     })
     
@@ -141,12 +165,14 @@ export function EyeTrackingResults({
 
     // Draw points with timing-based colors
     pathData.forEach((point, index) => {
-      const x = (point.x / window.innerWidth) * canvas.width
-      const y = (point.y / window.innerHeight) * canvas.height
+      // Coordinates are already mapped to natural image dimensions (0 to imageWidth/imageHeight)
+      // Scale them directly to canvas dimensions
+      const x = (point.x / imageWidth) * canvas.width
+      const y = (point.y / imageHeight) * canvas.height
       
-      if (x >= 0 && x <= canvas.width && y >= 0 && y <= canvas.height) {
-        ctx.beginPath()
-        ctx.arc(x, y, 4, 0, 2 * Math.PI)
+      // Draw all points - coordinates should be within bounds after mapping
+      ctx.beginPath()
+      ctx.arc(x, y, 4, 0, 2 * Math.PI)
         
         // Color based on position in sequence (start = green, middle = yellow, end = red)
         const progress = index / (pathData.length - 1)
@@ -158,7 +184,6 @@ export function EyeTrackingResults({
           ctx.fillStyle = 'red'
         }
         ctx.fill()
-      }
     })
     
     console.log('Scan path drawing completed')
@@ -183,14 +208,14 @@ export function EyeTrackingResults({
 
     console.log('Drawing fixations with', data.fixationPoints.length, 'fixations')
 
-    // Draw fixation points with proper image coordinates
+    // Coordinates are already mapped to natural image dimensions (0 to imageWidth/imageHeight)
+    // Scale them directly to canvas dimensions
     data.fixationPoints.forEach((fixation, index) => {
-      const x = (fixation.x / window.innerWidth) * canvas.width
-      const y = (fixation.y / window.innerHeight) * canvas.height
+      const x = (fixation.x / imageWidth) * canvas.width
+      const y = (fixation.y / imageHeight) * canvas.height
       
-      // Only draw if fixation is within image bounds
-      if (x >= 0 && x <= canvas.width && y >= 0 && y <= canvas.height) {
-        const radius = Math.max(8, Math.min(40, fixation.duration / 50)) // Size based on duration
+      // Draw all points - coordinates should be within bounds after mapping
+      const radius = Math.max(8, Math.min(40, fixation.duration / 50)) // Size based on duration
         
         // Draw outer ring
         ctx.beginPath()
@@ -217,7 +242,6 @@ export function EyeTrackingResults({
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
         ctx.fillText((index + 1).toString(), x, y)
-      }
     })
     
     console.log('Fixations drawing completed')
