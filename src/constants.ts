@@ -7,6 +7,9 @@ export const EYE_TRACKING_EXPERIMENT = {
   // Duration of the eye tracking session in seconds
   DURATION_SECONDS: 15,
   
+  // Duration of the calibration period in seconds
+  CALIBRATION_DURATION_SECONDS: 25,
+  
   // Maximum number of gaze points to store in memory
   MAX_GAZE_POINTS: 10000,
   

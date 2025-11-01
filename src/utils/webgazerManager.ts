@@ -1,6 +1,8 @@
 // Global WebGazer Manager
 // This manages WebGazer outside of React's lifecycle to avoid conflicts
 
+import { EYE_TRACKING_EXPERIMENT } from '../constants'
+
 export interface GazePoint {
   x: number
   y: number
@@ -169,10 +171,10 @@ class WebGazerManager {
       await this.webgazer.showPredictionPoints(this.debugMode)
     }
 
-    // Improved calibration: collect data for 15 seconds with better validation
+    // Improved calibration: collect data for the configured duration with better validation
     setTimeout(() => {
       this.validateCalibration()
-    }, 15000)
+    }, EYE_TRACKING_EXPERIMENT.CALIBRATION_DURATION_SECONDS * 1000)
   }
 
   // Analyze lighting quality based on confidence scores

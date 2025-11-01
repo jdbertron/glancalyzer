@@ -208,15 +208,15 @@ export function EyeTrackingExperiment() {
       setIsCalibrating(true)
       await webgazerManager.startCalibration()
       
-      toast.success('Calibrating... Look at all 4 screen corners, then the 4 image corners over the next 15 seconds.', {
-        duration: 15000,
+      toast.success(`Calibrating... Look at all 4 screen corners, then the 4 image corners over the next ${EYE_TRACKING_EXPERIMENT.CALIBRATION_DURATION_SECONDS} seconds.`, {
+        duration: EYE_TRACKING_EXPERIMENT.CALIBRATION_DURATION_SECONDS * 1000,
         style: {
           background: '#3b82f6',
           color: 'white',
         }
       })
       
-      // Auto-validate after 15 seconds
+      // Auto-validate after calibration duration
       setTimeout(() => {
         const result = webgazerManager.validateCalibration()
         setCalibrationResult(result)
@@ -244,7 +244,7 @@ export function EyeTrackingExperiment() {
         } else {
           toast.error(`Calibration failed: ${result.errorMessage}`)
         }
-      }, 15000)
+      }, EYE_TRACKING_EXPERIMENT.CALIBRATION_DURATION_SECONDS * 1000)
       
     } catch (error) {
       console.error('❌ [React] Calibration failed:', error)
@@ -750,7 +750,7 @@ export function EyeTrackingExperiment() {
 
                 {/* Step 2: Calibrate */}
                 {isInitialized && !isCalibrated && (
-                  <div className="flex items-center space-x-2 p-2 bg-gray-50 rounded-lg">
+                  <div className="flex items-start space-x-2 p-2 bg-gray-50 rounded-lg">
                     <div className="flex-shrink-0">
                       <div className="h-4 w-4 rounded-full border-2 border-blue-500" />
                     </div>
@@ -758,32 +758,38 @@ export function EyeTrackingExperiment() {
                       <h3 className="font-medium text-gray-900 text-xs">
                         2. Calibrate System
                       </h3>
-                      <p className="text-xs text-gray-600">
-                        Click to start calibration. For best results, look at all 4 corners of the screen, then the 4 corners of the image during the 15-second calibration period.
+                      <p className="text-xs text-gray-600 mb-2">
+                        Click to start calibration. During the {EYE_TRACKING_EXPERIMENT.CALIBRATION_DURATION_SECONDS}-second period, look at:
                       </p>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <button
-                        onClick={startCalibration}
-                        disabled={isCalibrating}
-                        className="btn btn-primary btn-sm text-xs px-2 py-1"
-                      >
-                        {isCalibrating ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                        ) : (
-                          <>
-                            <Play className="h-3 w-3 mr-1" />
-                            Start Calibration
-                          </>
-                        )}
-                      </button>
-                      <Link
-                        to="/tips"
-                        className="btn btn-outline btn-sm text-xs px-2 py-1 flex items-center space-x-1"
-                      >
-                        <Lightbulb className="h-3 w-3" />
-                        <span>Tips</span>
-                      </Link>
+                      <ul className="text-xs text-gray-600 mb-3 list-disc list-inside space-y-1">
+                        <li>4 screen corners</li>
+                        <li>4 image corners</li>
+                        <li>Screen center</li>
+                        <li>Ensure good lighting</li>
+                      </ul>
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={startCalibration}
+                          disabled={isCalibrating}
+                          className="btn btn-primary btn-sm text-xs px-2 py-1"
+                        >
+                          {isCalibrating ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <>
+                              <Play className="h-3 w-3 mr-1" />
+                              Start Calibration
+                            </>
+                          )}
+                        </button>
+                        <Link
+                          to="/tips"
+                          className="btn btn-outline btn-sm text-xs px-2 py-1 flex items-center space-x-1"
+                        >
+                          <Lightbulb className="h-3 w-3" />
+                          <span>Tips</span>
+                        </Link>
+                      </div>
                     </div>
                   </div>
                 )}
