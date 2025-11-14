@@ -16,6 +16,9 @@ export const EYE_TRACKING_EXPERIMENT = {
   // Fixation detection parameters
   FIXATION_THRESHOLD_PX: 50,
   FIXATION_DURATION_MS: 100,
+  
+  // Number of clicks required per calibration point (like WebGazer demo)
+  CLICKS_PER_CALIBRATION_POINT: 3,
 } as const
 
 // Application Settings
@@ -28,4 +31,6 @@ export const APP_CONFIG = {
   
   // Default pagination size
   DEFAULT_PAGE_SIZE: 20,
+
+  FUDGE_FACTOR: 0.8
 } as const

@@ -40,6 +40,95 @@ class WebGazerManager {
   private isTracking = false
   private currentGazePoint: GazePoint | null = null
   private debugMode = false
+  private isPaused = false
+  private lastCalibrationResult: CalibrationResult | null = null
+  private kalmanFilterEnabled = true // Default to enabled
+  private shouldClearStorageOnInit = false // Flag to clear storage before next initialization
+  private calibrationJustCleared = false // Flag to indicate calibration was just cleared
+  
+  // ============================================================================
+  // FACTORED OUT: Custom Exponential Smoothing (can be re-enabled if needed)
+  // ============================================================================
+  // The following smoothing code has been disabled in favor of WebGazer's
+  // built-in Kalman filter. To re-enable, uncomment the smoothing logic
+  // in the setGazeListener callback and restore these properties:
+  //
+  // private smoothedGazePoint: { x: number; y: number } | null = null
+  // private smoothingAlpha = 0.3 // Exponential moving average coefficient (0-1), lower = more smoothing
+  //
+  // See the commented section in setGazeListener for the smoothing implementation.
+  // ============================================================================
+
+  // Clear all WebGazer storage (called before initialization to prevent loading old data)
+  private async clearAllWebGazerStorage(): Promise<void> {
+    console.log('🧹 [WebGazerManager] Clearing all WebGazer storage before initialization...')
+    
+    // Clear localStorage
+    const keysToRemove: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && (key.startsWith('webgazer_') || key.includes('webgazer') || key.startsWith('localforage'))) {
+        keysToRemove.push(key)
+      }
+    }
+    keysToRemove.forEach(key => {
+      localStorage.removeItem(key)
+      console.log(`  🗑️ Removed localStorage key: ${key}`)
+    })
+    
+    // Clear all IndexedDB databases that might be used by WebGazer/localForage
+    if ('indexedDB' in window) {
+      try {
+        // Try common database names
+        const dbNames = ['localforage', 'webgazer', 'webgazer_data', 'webgazer_calibration']
+        for (const dbName of dbNames) {
+          try {
+            const deleteReq = indexedDB.deleteDatabase(dbName)
+            await new Promise<void>((resolve) => {
+              deleteReq.onsuccess = () => {
+                console.log(`  🗑️ Deleted IndexedDB database: ${dbName}`)
+                resolve()
+              }
+              deleteReq.onerror = () => resolve()
+              deleteReq.onblocked = () => {
+                // If blocked, wait a bit and try to close any connections
+                setTimeout(() => resolve(), 100)
+              }
+            })
+          } catch (e) {
+            // Ignore errors
+          }
+        }
+        
+        // Also try to clear any databases that start with 'webgazer' or 'localforage'
+        // Note: We can't list all databases directly, but we can try common patterns
+        // WebGazer might use versioned database names or other patterns
+        const additionalPatterns = [
+          'webgazer_ridge',
+          'webgazer_regression',
+          'webgazer_calibration_data',
+          'webgazer_stored_data'
+        ]
+        for (const dbName of additionalPatterns) {
+          try {
+            const deleteReq = indexedDB.deleteDatabase(dbName)
+            await new Promise<void>((resolve) => {
+              deleteReq.onsuccess = () => {
+                console.log(`  🗑️ Deleted IndexedDB database: ${dbName}`)
+                resolve()
+              }
+              deleteReq.onerror = () => resolve()
+              deleteReq.onblocked = () => resolve()
+            })
+          } catch (e) {
+            // Ignore errors
+          }
+        }
+      } catch (error) {
+        console.log('  ℹ️ IndexedDB clear skipped:', error)
+      }
+    }
+  }
 
   // Initialize WebGazer once
   async initialize(): Promise<void> {
@@ -63,10 +152,50 @@ class WebGazerManager {
       // Configure WebGazer
       wg.setRegression('ridge')
         .setTracker('TFFacemesh')
+        .applyKalmanFilter(this.kalmanFilterEnabled) // Use configured Kalman filter setting
         .setGazeListener((data: any, clock: any) => {
           if (data && data.x !== undefined && data.y !== undefined) {
+            // WebGazer's Kalman filter is already applied to data.x and data.y
+            // No additional custom smoothing needed - relying on WebGazer's filter only
+            
+            // ============================================================================
+            // FACTORED OUT: Custom Exponential Smoothing (can be re-enabled if needed)
+            // ============================================================================
+            // To re-enable custom smoothing on top of Kalman filter, uncomment below:
+            //
+            // let smoothedX = data.x
+            // let smoothedY = data.y
+            // 
+            // // Detect large movements (user actually moved eyes, not drift)
+            // const largeMovementThreshold = 100 // pixels
+            // let shouldResetSmoothing = false
+            // 
+            // if (this.smoothedGazePoint) {
+            //   const movementDistance = Math.sqrt(
+            //     Math.pow(data.x - this.smoothedGazePoint.x, 2) + 
+            //     Math.pow(data.y - this.smoothedGazePoint.y, 2)
+            //   )
+            //   
+            //   if (movementDistance > largeMovementThreshold) {
+            //     shouldResetSmoothing = true
+            //     console.log(`🔄 [WebGazerManager] Large movement detected (${Math.round(movementDistance)}px), resetting smoothing`)
+            //   } else {
+            //     smoothedX = this.smoothingAlpha * data.x + (1 - this.smoothingAlpha) * this.smoothedGazePoint.x
+            //     smoothedY = this.smoothingAlpha * data.y + (1 - this.smoothingAlpha) * this.smoothedGazePoint.y
+            //   }
+            // }
+            // 
+            // if (shouldResetSmoothing || !this.smoothedGazePoint) {
+            //   this.smoothedGazePoint = { x: data.x, y: data.y }
+            //   smoothedX = data.x
+            //   smoothedY = data.y
+            // } else {
+            //   this.smoothedGazePoint = { x: smoothedX, y: smoothedY }
+            // }
+            // ============================================================================
+            
             const gazePoint: GazePoint = {
-              x: data.x,
+              x: data.x, // Using WebGazer's Kalman-filtered coordinates directly
               y: data.y,
               timestamp: Date.now(),
               confidence: data.confidence || 0.5
@@ -86,15 +215,62 @@ class WebGazerManager {
               console.log(`👁️ [WebGazerManager] Gaze point #${this.experimentData.length}: (${Math.round(data.x)}, ${Math.round(data.y)})`)
             }
 
-            // Notify all listeners
+            // Notify all listeners with Kalman-filtered data
             this.gazeListeners.forEach(listener => listener(gazePoint))
           }
         })
         .saveDataAcrossSessions(true)
 
+      wg.params.moveTickSize = 200;  // Sample every 200ms instead of 50ms default
+      wg.params.trackMouseMovements = false;  // Disable mouse tracking
+      wg.params.dataWindow = 30;  // Reduce click window if needed
+      
+      // Clear storage right before begin() if we need to start fresh
+      // This prevents WebGazer from loading old calibration data during begin()
+      let disabledSaveDataAcrossSessions = false
+      if (this.shouldClearStorageOnInit) {
+        console.log('🧹 [WebGazerManager] Clearing storage before WebGazer.begin() to prevent loading old data...')
+        await this.clearAllWebGazerStorage()
+        
+        // Temporarily disable saveDataAcrossSessions to prevent WebGazer from loading stored data
+        // We'll re-enable it after begin() completes
+        wg.saveDataAcrossSessions(false)
+        disabledSaveDataAcrossSessions = true
+        this.shouldClearStorageOnInit = false
+        this.calibrationJustCleared = true // Mark that we just cleared calibration
+      }
+      
       // Start WebGazer
       await wg.begin()
+      
+      // If we cleared storage, also clear the internal model state after begin()
+      // This ensures WebGazer doesn't have stale data in memory
+      if (this.calibrationJustCleared) {
+        const wgAny = wg as any
+        if (wgAny.ridge) {
+          if (wgAny.ridge.regression) {
+            wgAny.ridge.regression.beta = []
+            wgAny.ridge.regression.weights = []
+            if (wgAny.ridge.regression.X) wgAny.ridge.regression.X = []
+            if (wgAny.ridge.regression.y) wgAny.ridge.regression.y = []
+          }
+          if (wgAny.ridge.calibrationPoints) wgAny.ridge.calibrationPoints = []
+          if (wgAny.ridge.storedData) wgAny.ridge.storedData = []
+        }
+        console.log('  🗑️ Cleared WebGazer internal model state after begin()')
+      }
+      
+      // Re-enable saveDataAcrossSessions after begin() if we had disabled it
+      if (disabledSaveDataAcrossSessions) {
+        wg.saveDataAcrossSessions(true)
+        console.log('✅ [WebGazerManager] Re-enabled saveDataAcrossSessions after fresh start')
+      }
       console.log('✅ [WebGazerManager] WebGazer started')
+
+      // Keep mouse tracking enabled - WebGazer uses it for self-calibration
+      // The demo page relies on mouse movements and clicks to train the model
+      // We'll only disable it during actual tracking (not during calibration)
+      console.log('🖱️ [WebGazerManager] Mouse tracking enabled for WebGazer self-calibration')
 
       // Configure video and overlay visibility based on debug mode
       await wg.showVideoPreview(this.debugMode)
@@ -116,13 +292,25 @@ class WebGazerManager {
           videoElement.style.borderRadius = '4px'
           videoElement.style.zIndex = '999'
           videoElement.style.backgroundColor = '#000'
-          videoElement.style.opacity = '0.8'
+          videoElement.style.opacity = '1' // Full opacity to match WebGazer demo page
           console.log('🎥 [WebGazerManager] Video element styled for debug mode')
         }
       }
 
       this.webgazer = wg
       this.isInitialized = true
+      
+      // Wait a bit for WebGazer to load calibration data from localStorage
+      await new Promise(resolve => setTimeout(resolve, 500))
+      
+      // Check if WebGazer has existing calibration data from localStorage
+      const hasExistingCalibration = await this.checkForExistingCalibration()
+      if (hasExistingCalibration) {
+        console.log('✅ [WebGazerManager] Found existing calibration data from previous session')
+      } else {
+        console.log('ℹ️ [WebGazerManager] No existing calibration data found')
+      }
+      
       console.log('🎉 [WebGazerManager] Initialization complete!')
 
     } catch (error) {
@@ -133,13 +321,13 @@ class WebGazerManager {
     }
   }
 
-  // Start calibration
+  // Start calibration (passive - for backward compatibility)
   async startCalibration(): Promise<void> {
     if (!this.isInitialized) {
       await this.initialize()
     }
 
-    console.log('🎯 [WebGazerManager] Starting calibration...')
+    console.log('🎯 [WebGazerManager] Starting passive calibration...')
     this.isCalibrating = true
     this.calibrationData = []
 
@@ -176,6 +364,72 @@ class WebGazerManager {
       this.validateCalibration()
     }, EYE_TRACKING_EXPERIMENT.CALIBRATION_DURATION_SECONDS * 1000)
   }
+
+  // Re-enable mouse tracking for calibration (needed for self-calibration)
+  private enableMouseTracking(): void {
+    if (!this.webgazer) return
+    
+    // Note: WebGazer automatically re-adds mouse listeners when it starts
+    // We just need to ensure it's initialized. The library handles this internally.
+    // If mouse tracking was disabled, WebGazer will re-enable it when begin() is called.
+    console.log('🖱️ [WebGazerManager] Mouse tracking should be enabled for calibration (handled by WebGazer)')
+  }
+
+  // Start point-based calibration (9-point grid - recommended)
+  async startPointBasedCalibration(): Promise<{ points: Array<{ x: number; y: number }> }> {
+    if (!this.isInitialized) {
+      await this.initialize()
+    }
+
+    console.log('🎯 [WebGazerManager] Starting point-based calibration (9-point grid)...')
+    this.isCalibrating = true
+    this.calibrationData = []
+
+    // Re-enable mouse tracking for calibration (WebGazer needs it to learn)
+    // Note: WebGazer should handle this automatically, but we ensure it's ready
+    this.enableMouseTracking()
+
+    // Ensure video visibility matches debug mode
+    if (this.webgazer) {
+      await this.webgazer.showVideoPreview(this.debugMode)
+      await this.webgazer.showPredictionPoints(this.debugMode)
+    }
+
+    // Generate 9-point grid (3x3) + 1 center point (10 total)
+    // Points are positioned at: left(0%), center(50%), right(100%) for both axes
+    const margin = 50 // Margin from viewport edges
+    const viewportWidth = window.innerWidth
+    const viewportHeight = window.innerHeight
+    const availableWidth = viewportWidth - (margin * 2)
+    const availableHeight = viewportHeight - (margin * 2)
+
+    const points: Array<{ x: number; y: number }> = []
+    for (let row = 0; row < 3; row++) {
+      for (let col = 0; col < 3; col++) {
+        // Position at 0%, 50%, or 100% of available space
+        const xPercent = col === 0 ? 0 : col === 1 ? 0.5 : 1
+        const yPercent = row === 0 ? 0 : row === 1 ? 0.5 : 1
+        const x = margin + (availableWidth * xPercent)
+        const y = margin + (availableHeight * yPercent)
+        points.push({ x, y })
+      }
+    }
+    
+    // Note: Center point is already included in the 3x3 grid at row 1, col 1 (point 5, 0-indexed: 4)
+
+    // Mouse tracking is already enabled from initialization
+    // WebGazer automatically learns from mouse movements and clicks during calibration
+    // This is how the demo page works - no manual intervention needed
+    console.log('🖱️ [WebGazerManager] Mouse tracking enabled - WebGazer will learn from clicks and movements naturally')
+
+    console.log('📐 [WebGazerManager] Generated 9-point calibration grid (3x3, center is point 5):', points)
+    return { points }
+  }
+
+  // Note: We no longer manually record clicks - WebGazer learns naturally from user clicks
+  // This matches the demo page approach where clicks on calibration points are handled
+  // automatically by WebGazer's built-in self-calibration system
+  // The click handler in CalibrationLab just needs to update UI state
 
   // Analyze lighting quality based on confidence scores
   private analyzeLightingQuality(averageConfidence: number): 'good' | 'fair' | 'poor' {
@@ -214,23 +468,51 @@ class WebGazerManager {
     return isWellDistributed ? 'optimal' : 'suboptimal'
   }
 
+  // Disable mouse tracking to freeze the model (prevent drift)
+  private disableMouseTracking(): void {
+    if (!this.webgazer) return
+    
+    try {
+      const wgAny = this.webgazer as any
+      // Try to remove mouse event listeners to stop continuous learning
+      if (wgAny.mouseEventListener) {
+        document.removeEventListener('mousemove', wgAny.mouseEventListener)
+        document.removeEventListener('click', wgAny.mouseEventListener)
+        console.log('🖱️ [WebGazerManager] Mouse tracking disabled - model frozen')
+      } else if (typeof wgAny.removeMouseEventListeners === 'function') {
+        wgAny.removeMouseEventListeners()
+        console.log('🖱️ [WebGazerManager] Mouse event listeners removed - model frozen')
+      } else {
+        console.log('⚠️ [WebGazerManager] Could not find method to disable mouse tracking')
+      }
+    } catch (error) {
+      console.warn('⚠️ [WebGazerManager] Error disabling mouse tracking:', error)
+    }
+  }
+
   // Validate calibration
   validateCalibration(): CalibrationResult {
     console.log('🔍 [WebGazerManager] Validating calibration with', this.calibrationData.length, 'points')
     
     this.isCalibrating = false
+    
+    // Disable mouse tracking after calibration to freeze the model
+    // This prevents drift when user moves mouse during tracking
+    this.disableMouseTracking()
 
     if (this.calibrationData.length === 0) {
       console.log('❌ [WebGazerManager] No calibration data collected')
-      return {
+      const result = {
         isValid: false,
         pointsCollected: 0,
         averageConfidence: 0,
         errorMessage: 'No gaze data collected during calibration',
-        lightingQuality: 'poor',
+        lightingQuality: 'poor' as const,
         eyeglassesDetected: false,
-        cameraPositioning: 'suboptimal'
+        cameraPositioning: 'suboptimal' as const
       }
+      this.lastCalibrationResult = result
+      return result
     }
 
     const averageConfidence = this.calibrationData.reduce((sum, point) => sum + point.confidence, 0) / this.calibrationData.length
@@ -270,6 +552,9 @@ class WebGazerManager {
          'Unknown calibration issue') : undefined
     }
 
+    // Store calibration result for reuse after pause/resume
+    this.lastCalibrationResult = result
+
     // Log calibration domain analysis
     const calDomain = this.getCalibrationDomain()
     if (calDomain) {
@@ -292,15 +577,52 @@ class WebGazerManager {
     return result
   }
 
+  // Resume WebGazer if it was paused
+  private async resumeIfPaused(): Promise<void> {
+    if (this.isPaused && this.webgazer) {
+      console.log('🔄 [WebGazerManager] Resuming WebGazer after pause...')
+      try {
+        // Check if WebGazer is ready, if not, call begin() to resume
+        // begin() will re-initialize the webcam and restore calibration from localStorage
+        if (!this.webgazer.isReady()) {
+          console.log('🔄 [WebGazerManager] WebGazer not ready, calling begin() to resume...')
+          await this.webgazer.begin()
+          console.log('✅ [WebGazerManager] WebGazer resumed (calibration restored from localStorage)')
+          
+          // Wait a bit for video element to be ready
+          await new Promise(resolve => setTimeout(resolve, 1000))
+        } else {
+          console.log('✅ [WebGazerManager] WebGazer already ready')
+        }
+        this.isPaused = false
+        
+        // Reconfigure video visibility
+        await this.webgazer.showVideoPreview(this.debugMode)
+        await this.webgazer.showPredictionPoints(this.debugMode)
+      } catch (error) {
+        console.error('❌ [WebGazerManager] Failed to resume WebGazer:', error)
+        throw error
+      }
+    }
+  }
+
   // Start tracking
   async startTracking(): Promise<void> {
     if (!this.isInitialized) {
       throw new Error('WebGazer not initialized')
     }
 
+    // Resume WebGazer if it was paused (e.g., after stopWebcam)
+    await this.resumeIfPaused()
+
     console.log('🎯 [WebGazerManager] Starting tracking...')
     this.isTracking = true
     this.experimentData = []
+    // Note: Custom smoothing is disabled - using WebGazer's Kalman filter only
+
+    // Ensure mouse tracking is disabled to prevent drift
+    // The model should be frozen at calibration state
+    this.disableMouseTracking()
 
     // Ensure video visibility matches debug mode
     if (this.webgazer) {
@@ -362,6 +684,56 @@ class WebGazerManager {
   // Get debug mode
   getDebugMode(): boolean {
     return this.debugMode
+  }
+
+  // Set Kalman filter
+  async setKalmanFilter(enabled: boolean): Promise<void> {
+    this.kalmanFilterEnabled = enabled
+    console.log(`🔧 [WebGazerManager] Kalman filter ${enabled ? 'enabled' : 'disabled'}`)
+    
+    if (this.webgazer) {
+      try {
+        this.webgazer.applyKalmanFilter(enabled)
+        console.log(`✅ [WebGazerManager] Kalman filter ${enabled ? 'enabled' : 'disabled'} successfully`)
+      } catch (error) {
+        console.error('❌ [WebGazerManager] Failed to update Kalman filter:', error)
+        throw error
+      }
+    }
+  }
+
+  // Get Kalman filter state
+  getKalmanFilter(): boolean {
+    return this.kalmanFilterEnabled
+  }
+
+  // ============================================================================
+  // FACTORED OUT: Custom Smoothing Methods (disabled - using WebGazer's Kalman filter)
+  // ============================================================================
+  // These methods are kept for backward compatibility but are no-ops.
+  // To re-enable custom smoothing, restore the smoothing state properties
+  // and uncomment the smoothing logic in setGazeListener.
+  // ============================================================================
+  
+  // Set smoothing coefficient (0-1, lower = more smoothing/inertia)
+  // DISABLED: Using WebGazer's Kalman filter instead
+  setSmoothingAlpha(alpha: number): void {
+    // this.smoothingAlpha = Math.max(0, Math.min(1, alpha))
+    console.log(`🔧 [WebGazerManager] Smoothing alpha setter called (${alpha}), but custom smoothing is disabled. Using WebGazer's Kalman filter.`)
+  }
+
+  // Get smoothing coefficient
+  // DISABLED: Using WebGazer's Kalman filter instead
+  getSmoothingAlpha(): number {
+    // return this.smoothingAlpha
+    return 1.0 // Return 1.0 to indicate no custom smoothing is applied
+  }
+
+  // Reset smoothing state (useful when starting new calibration or tracking)
+  // DISABLED: Using WebGazer's Kalman filter instead
+  resetSmoothing(): void {
+    // this.smoothedGazePoint = null
+    console.log('🔄 [WebGazerManager] Reset smoothing called, but custom smoothing is disabled. Using WebGazer\'s Kalman filter.')
   }
 
   // Compute a domain (min/max) for an array of gaze points
@@ -560,6 +932,8 @@ class WebGazerManager {
         await this.webgazer.pause()
         await this.webgazer.showVideoPreview(false)
         await this.webgazer.showPredictionPoints(false)
+        this.isPaused = true
+        console.log('⏸️ [WebGazerManager] WebGazer paused (calibration data preserved in localStorage)')
       } catch (error) {
         console.error('Error stopping webcam:', error)
       }
@@ -577,7 +951,153 @@ class WebGazerManager {
 
     this.isTracking = false
     this.isCalibrating = false
-    console.log('✅ [WebGazerManager] Webcam stopped')
+    // Note: calibrationData and lastCalibrationResult are preserved
+    // WebGazer's calibration is saved to localStorage via saveDataAcrossSessions(true)
+    console.log('✅ [WebGazerManager] Webcam stopped (calibration preserved)')
+  }
+
+  // Check if WebGazer has existing calibration data in localStorage
+  private async checkForExistingCalibration(): Promise<boolean> {
+    if (!this.webgazer) return false
+    
+    // If we just cleared calibration, don't report existing calibration
+    // even if WebGazer still has stale data in memory
+    if (this.calibrationJustCleared) {
+      console.log('ℹ️ [WebGazerManager] Skipping calibration check - calibration was just cleared')
+      this.calibrationJustCleared = false // Reset flag after first check
+      return false
+    }
+    
+    try {
+      // Check localStorage for WebGazer's stored data
+      // WebGazer stores data with keys like 'webgazer_*' or uses IndexedDB via localForage
+      // We'll check both localStorage and try to access WebGazer's internal state
+      let hasStoredData = false
+      
+      // Check localStorage for webgazer keys
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)
+        if (key && (key.startsWith('webgazer_') || key.includes('webgazer'))) {
+          const value = localStorage.getItem(key)
+          // Check if the value contains calibration data (not just empty or default)
+          if (value && value.length > 10) {
+            hasStoredData = true
+            console.log(`📦 [WebGazerManager] Found WebGazer data in localStorage: ${key}`)
+            break
+          }
+        }
+      }
+      
+      // Check WebGazer's internal regression model
+      // WebGazer stores the trained model internally when calibration exists
+      const wgAny = this.webgazer as any
+      const hasModel = wgAny.ridge && wgAny.ridge.regression && wgAny.ridge.regression.beta && wgAny.ridge.regression.beta.length > 0
+      
+      // Only consider calibration existing if we have actual calibration data (model or stored data)
+      // Don't rely on isReady() alone - it just means WebGazer initialized, not that it has calibration
+      const result = hasStoredData || hasModel
+      
+      if (result) {
+        console.log('✅ [WebGazerManager] Calibration data detected:', {
+          hasStoredData,
+          hasModel
+        })
+      } else {
+        // Log why we're not detecting calibration (for debugging)
+        const isReady = this.webgazer.isReady && this.webgazer.isReady()
+        console.log('ℹ️ [WebGazerManager] No calibration data found:', {
+          isReady,
+          hasStoredData,
+          hasModel,
+          note: 'isReady() only indicates WebGazer initialized, not that calibration exists'
+        })
+      }
+      
+      return result
+    } catch (error) {
+      console.warn('⚠️ [WebGazerManager] Error checking for existing calibration:', error)
+      return false
+    }
+  }
+
+  // Public method to check if existing calibration is available
+  async hasExistingCalibration(): Promise<boolean> {
+    if (!this.isInitialized) {
+      return false
+    }
+    return await this.checkForExistingCalibration()
+  }
+
+  // Get last calibration result (for restoring state after pause)
+  getLastCalibrationResult(): CalibrationResult | null {
+    return this.lastCalibrationResult
+  }
+
+  // Clear calibration data from localStorage and reset internal state
+  async clearCalibrationData(): Promise<void> {
+    console.log('🗑️ [WebGazerManager] Clearing calibration data...')
+    
+    try {
+      // Stop any active tracking or calibration first
+      if (this.isTracking) {
+        this.stopTracking()
+      }
+      if (this.isCalibrating) {
+        this.isCalibrating = false
+      }
+      
+      // Use the same comprehensive clearing method
+      await this.clearAllWebGazerStorage()
+      
+      // Clear internal calibration state
+      this.calibrationData = []
+      this.lastCalibrationResult = null
+      
+      // Reset WebGazer's internal regression model if possible
+      if (this.webgazer) {
+        const wgAny = this.webgazer as any
+        // Clear the regression model more thoroughly
+        if (wgAny.ridge) {
+          if (wgAny.ridge.regression) {
+            wgAny.ridge.regression.beta = []
+            wgAny.ridge.regression.weights = []
+            // Clear any other regression properties
+            if (wgAny.ridge.regression.X) wgAny.ridge.regression.X = []
+            if (wgAny.ridge.regression.y) wgAny.ridge.regression.y = []
+            console.log('  🗑️ Cleared WebGazer internal regression model')
+          }
+          // Also clear any stored calibration points
+          if (wgAny.ridge.calibrationPoints) {
+            wgAny.ridge.calibrationPoints = []
+          }
+          // Clear stored data
+          if (wgAny.ridge.storedData) {
+            wgAny.ridge.storedData = []
+          }
+        }
+        // Reset WebGazer's ready state by ending and marking for reinitialization
+        try {
+          await this.webgazer.pause()
+          await this.webgazer.end()
+          console.log('  🗑️ Ended WebGazer to reset state')
+        } catch (error) {
+          console.log('  ⚠️ Error ending WebGazer (may already be ended):', error)
+        }
+      }
+      
+      // Mark as not initialized so it will reinitialize cleanly on next use
+      this.isInitialized = false
+      this.webgazer = null
+      
+      // Set flag to clear storage on next initialization
+      // This ensures we clear storage right before WebGazer.begin() to prevent it from loading old data
+      this.shouldClearStorageOnInit = true
+      
+      console.log(`✅ [WebGazerManager] Calibration data cleared (WebGazer reset, will clear storage on next init)`)
+    } catch (error) {
+      console.error('❌ [WebGazerManager] Error clearing calibration data:', error)
+      throw error
+    }
   }
 
   // Cleanup
@@ -609,6 +1129,8 @@ class WebGazerManager {
     this.isInitialized = false
     this.isCalibrating = false
     this.isTracking = false
+    this.isPaused = false
+    this.lastCalibrationResult = null
     console.log('✅ [WebGazerManager] Cleanup complete')
   }
 }

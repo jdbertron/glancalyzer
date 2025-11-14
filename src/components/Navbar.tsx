@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Upload, User, LogOut, Home, BarChart3, Image, Lightbulb } from 'lucide-react'
+import { Upload, User, LogOut, Home, BarChart3, Image, Lightbulb, Settings } from 'lucide-react'
 import { Id } from '../../convex/_generated/dataModel'
 
 interface NavbarProps {
@@ -25,6 +25,14 @@ export function Navbar({ user }: NavbarProps) {
             >
               <Lightbulb className="h-4 w-4" />
               <span>Tips</span>
+            </Link>
+            
+            <Link
+              to="/calibration-lab"
+              className="btn btn-outline btn-sm flex items-center space-x-2"
+            >
+              <Settings className="h-4 w-4" />
+              <span>Calibration Lab</span>
             </Link>
             
             <Link

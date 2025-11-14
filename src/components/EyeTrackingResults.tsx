@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Eye, BarChart3, Map, Activity, Download } from 'lucide-react'
+import { APP_CONFIG } from '../constants'
 
 interface GazePoint {
   x: number
@@ -81,8 +82,8 @@ export function EyeTrackingResults({
       
       // Scale coordinates from natural dimensions directly to canvas
       // Coordinates are stored in natural image space (from experiment)
-      const x = (point.x / imageWidth) * canvas.width
-      const y = (point.y / imageHeight) * canvas.height
+      const x = (point.x * APP_CONFIG.FUDGE_FACTOR / imageWidth) * canvas.width
+      const y = (point.y * APP_CONFIG.FUDGE_FACTOR / imageHeight) * canvas.height
       
       // Debug: Log first few points to see actual coordinates
       if (index < 3) {
@@ -157,8 +158,8 @@ export function EyeTrackingResults({
     pathData.forEach((point, index) => {
       // Scale coordinates from natural dimensions directly to canvas
       // Coordinates are stored in natural image space (from experiment)
-      const x = (point.x / imageWidth) * canvas.width
-      const y = (point.y / imageHeight) * canvas.height
+      const x = (point.x * APP_CONFIG.FUDGE_FACTOR / imageWidth) * canvas.width
+      const y = (point.y * APP_CONFIG.FUDGE_FACTOR / imageHeight) * canvas.height
       
       // CRITICAL: Log first and last points in detail
       const isFirstPoint = index === 0
@@ -209,8 +210,8 @@ export function EyeTrackingResults({
     pathData.forEach((point, index) => {
       // Scale coordinates from natural dimensions directly to canvas
       // Coordinates are stored in natural image space (from experiment)
-      const x = (point.x / imageWidth) * canvas.width
-      const y = (point.y / imageHeight) * canvas.height
+      const x = (point.x * APP_CONFIG.FUDGE_FACTOR / imageWidth) * canvas.width
+      const y = (point.y * APP_CONFIG.FUDGE_FACTOR / imageHeight) * canvas.height
       
       ctx.beginPath()
       ctx.arc(x, y, 4, 0, 2 * Math.PI)

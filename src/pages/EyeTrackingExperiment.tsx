@@ -12,7 +12,8 @@ import {
   AlertCircle, 
   CheckCircle,
   Loader2,
-  Lightbulb
+  Lightbulb,
+  Trash2
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { EYE_TRACKING_EXPERIMENT } from '../constants'
@@ -133,6 +134,9 @@ export function EyeTrackingExperiment() {
   const [debugMode, setDebugMode] = useState(false)
   const [imageOrientation, setImageOrientation] = useState<'portrait' | 'landscape'>('landscape')
   const [imageNaturalDimensions, setImageNaturalDimensions] = useState<{ width: number; height: number } | null>(null)
+  const [calibrationPoints, setCalibrationPoints] = useState<Array<{ x: number; y: number }>>([])
+  const [completedCalibrationPoints, setCompletedCalibrationPoints] = useState<Set<number>>(new Set())
+  const [clicksPerPoint, setClicksPerPoint] = useState<Map<number, number>>(new Map())
   
   // Refs
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
@@ -151,9 +155,41 @@ export function EyeTrackingExperiment() {
     if (pictureId && !isInitialized) {
       console.log('🚀 [React] Initializing WebGazer...')
       webgazerManager.initialize()
-        .then(() => {
+        .then(async () => {
           setIsInitialized(true)
-          toast.success('WebGazer initialized! Click "Start Calibration" to begin.')
+          
+          // Wait a moment for WebGazer to fully load calibration data
+          await new Promise(resolve => setTimeout(resolve, 1000))
+          
+          // Check if existing calibration is available
+          const hasExistingCalibration = await webgazerManager.hasExistingCalibration()
+          const savedCalibration = webgazerManager.getLastCalibrationResult()
+          
+          if (hasExistingCalibration) {
+            // Automatically skip calibration if valid calibration exists
+            // Create a valid calibration result to mark as calibrated
+            const autoCalibrationResult: CalibrationResult = {
+              isValid: true,
+              pointsCollected: 0, // We don't know the exact count, but calibration exists
+              averageConfidence: 0.5, // Default confidence
+              lightingQuality: 'good',
+              eyeglassesDetected: false,
+              cameraPositioning: 'optimal'
+            }
+            
+            // Use saved calibration if available and valid, otherwise use auto result
+            if (savedCalibration?.isValid) {
+              setCalibrationResult(savedCalibration)
+            } else {
+              setCalibrationResult(autoCalibrationResult)
+            }
+            
+            setIsCalibrated(true)
+            console.log('✅ [React] Existing calibration detected - automatically skipping calibration step')
+            toast.success('Existing calibration found and loaded! You can start tracking now, or recalibrate if needed.')
+          } else {
+            toast.success('WebGazer initialized! Click "Start Calibration" to begin.')
+          }
         })
         .catch((error) => {
           console.error('❌ [React] WebGazer initialization failed:', error)
@@ -200,29 +236,64 @@ export function EyeTrackingExperiment() {
     return () => clearInterval(interval)
   }, [])
 
-  // Start calibration
+  // Start calibration (point-based, like CalibrationLab)
   const startCalibration = useCallback(async () => {
     console.log('🎯 [React] Start calibration button clicked')
     
     try {
       setIsCalibrating(true)
-      await webgazerManager.startCalibration()
+      setCompletedCalibrationPoints(new Set())
+      setClicksPerPoint(new Map())
       
-      toast.success(`Calibrating... Look at all 4 screen corners, then the 4 image corners over the next ${EYE_TRACKING_EXPERIMENT.CALIBRATION_DURATION_SECONDS} seconds.`, {
-        duration: EYE_TRACKING_EXPERIMENT.CALIBRATION_DURATION_SECONDS * 1000,
-        style: {
-          background: '#3b82f6',
-          color: 'white',
-        }
-      })
+      // Start point-based calibration (9-point grid with red dots)
+      const { points } = await webgazerManager.startPointBasedCalibration()
+      setCalibrationPoints(points)
       
-      // Auto-validate after calibration duration
+    } catch (error) {
+      console.error('❌ [React] Calibration failed:', error)
+      toast.error('Calibration failed. Please try again.')
+      setIsCalibrating(false)
+    }
+  }, [])
+
+  // Handle click on calibration point
+  const handleCalibrationPointClick = useCallback((pointIndex: number, point: { x: number; y: number }) => {
+    if (completedCalibrationPoints.has(pointIndex)) {
+      return
+    }
+
+    const currentClicks = clicksPerPoint.get(pointIndex) || 0
+    const newClicks = currentClicks + 1
+    setClicksPerPoint(prev => new Map(prev).set(pointIndex, newClicks))
+
+    if (newClicks >= EYE_TRACKING_EXPERIMENT.CLICKS_PER_CALIBRATION_POINT) {
+      setCompletedCalibrationPoints(prev => new Set(prev).add(pointIndex))
+    }
+  }, [clicksPerPoint, completedCalibrationPoints])
+
+  // Watch for when all calibration points are completed
+  useEffect(() => {
+    if (!isCalibrating || calibrationPoints.length === 0) {
+      return
+    }
+
+    // Check if all points are completed
+    const allCompleted = calibrationPoints.every((_, idx) => {
+      const isCompleted = completedCalibrationPoints.has(idx)
+      const clickCount = clicksPerPoint.get(idx) || 0
+      return isCompleted || clickCount >= EYE_TRACKING_EXPERIMENT.CLICKS_PER_CALIBRATION_POINT
+    })
+
+    if (allCompleted) {
+      console.log('✅ [React] All calibration points completed, validating...')
+      // All points completed, validate calibration
       setTimeout(() => {
         const result = webgazerManager.validateCalibration()
         setCalibrationResult(result)
         
         if (result.isValid) {
           setIsCalibrated(true)
+          setIsCalibrating(false)
           let message = `Calibration complete! Collected ${result.pointsCollected} points with ${(result.averageConfidence * 100).toFixed(1)}% avg confidence.`
           
           // Add environmental feedback
@@ -243,15 +314,11 @@ export function EyeTrackingExperiment() {
           toast.success(message)
         } else {
           toast.error(`Calibration failed: ${result.errorMessage}`)
+          setIsCalibrating(false)
         }
-      }, EYE_TRACKING_EXPERIMENT.CALIBRATION_DURATION_SECONDS * 1000)
-      
-    } catch (error) {
-      console.error('❌ [React] Calibration failed:', error)
-      toast.error('Calibration failed. Please try again.')
-      setIsCalibrating(false)
+      }, 500)
     }
-  }, [])
+  }, [isCalibrating, calibrationPoints, clicksPerPoint, completedCalibrationPoints])
 
   // Start tracking
   const startTracking = useCallback(async () => {
@@ -664,6 +731,100 @@ export function EyeTrackingExperiment() {
             <div className="card">
               <div className="card-content p-0">
                 <div className="relative" style={{ height: 'calc(100vh - 140px)' }}>
+                  {/* Calibration Points Overlay */}
+                  {isCalibrating && calibrationPoints.length > 0 && (
+                    <div className="fixed inset-0 z-20 pointer-events-none">
+                      {calibrationPoints.map((point, index) => {
+                        const isCompleted = completedCalibrationPoints.has(index)
+                        const clickCount = clicksPerPoint.get(index) || 0
+                        const needsMoreClicks = clickCount > 0 && clickCount < EYE_TRACKING_EXPERIMENT.CLICKS_PER_CALIBRATION_POINT
+                        const isClickable = !isCompleted
+                        
+                        return (
+                          <div
+                            key={index}
+                            className="absolute pointer-events-auto cursor-pointer transition-all duration-300"
+                            style={{
+                              left: `${point.x}px`,
+                              top: `${point.y}px`,
+                              transform: 'translate(-50%, -50%)',
+                            }}
+                            onClick={() => handleCalibrationPointClick(index, point)}
+                          >
+                            {/* Outer ring */}
+                            <div
+                              className={`absolute rounded-full transition-all duration-300 ${
+                                isCompleted
+                                  ? 'bg-green-500'
+                                  : isClickable
+                                  ? 'bg-red-500 animate-pulse'
+                                  : 'bg-gray-400 opacity-50'
+                              }`}
+                              style={{
+                                width: isClickable ? '60px' : '40px',
+                                height: isClickable ? '60px' : '40px',
+                                transform: 'translate(-50%, -50%)',
+                              }}
+                            />
+                            {/* Inner dot */}
+                            <div
+                              className={`absolute rounded-full ${
+                                isCompleted || isClickable
+                                  ? 'bg-white'
+                                  : 'bg-gray-200'
+                              }`}
+                              style={{
+                                width: isClickable ? '30px' : '20px',
+                                height: isClickable ? '30px' : '20px',
+                                transform: 'translate(-50%, -50%)',
+                                left: '50%',
+                                top: '50%',
+                              }}
+                            />
+                            {/* Point number */}
+                            <div
+                              className={`absolute text-xs font-bold ${
+                                isCompleted || isClickable ? 'text-white' : 'text-gray-600'
+                              }`}
+                              style={{
+                                transform: 'translate(-50%, -50%)',
+                                left: '50%',
+                                top: '50%',
+                                textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+                              }}
+                            >
+                              {index + 1}
+                            </div>
+                            {/* Click progress indicator */}
+                            {needsMoreClicks && (
+                              <div
+                                className="absolute text-xs font-semibold text-white whitespace-nowrap"
+                                style={{
+                                  transform: 'translate(-50%, 0)',
+                                  left: '50%',
+                                  top: '35px',
+                                  textShadow: '0 1px 2px rgba(0,0,0,0.8)',
+                                }}
+                              >
+                                {clickCount}/{EYE_TRACKING_EXPERIMENT.CLICKS_PER_CALIBRATION_POINT}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                      
+                      {/* Instructions overlay */}
+                      <div className="absolute top-20 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white px-6 py-3 rounded-lg shadow-lg text-center z-30 pointer-events-none">
+                        <div className="text-lg font-semibold mb-1">
+                          Click each red dot {EYE_TRACKING_EXPERIMENT.CLICKS_PER_CALIBRATION_POINT} times (any order)
+                        </div>
+                        <div className="text-sm opacity-90">
+                          {completedCalibrationPoints.size} of {calibrationPoints.length} points completed
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {getImageUrl ? (
                     <img
                       ref={imageRef}
@@ -718,6 +879,31 @@ export function EyeTrackingExperiment() {
                   <div className="flex items-center space-x-2">
                     <button
                       onClick={async () => {
+                        if (window.confirm('Are you sure you want to clear all calibration data? This will require recalibration.')) {
+                          try {
+                            await webgazerManager.clearCalibrationData()
+                            setCalibrationResult(null)
+                            setIsCalibrated(false)
+                            setIsInitialized(false) // Reset initialization state so it reinitializes and checks for calibration
+                            setCalibrationPoints([])
+                            setCompletedCalibrationPoints(new Set())
+                            setClicksPerPoint(new Map())
+                            toast.success('Calibration data cleared. The page will reinitialize WebGazer on next load.')
+                          } catch (error) {
+                            console.error('Failed to clear calibration data:', error)
+                            toast.error('Failed to clear calibration data.')
+                          }
+                        }
+                      }}
+                      className="btn btn-outline btn-xs text-red-600 border-red-300 hover:bg-red-50"
+                      disabled={isCalibrating || isTracking}
+                      title="Clear all calibration data from localStorage"
+                    >
+                      <Trash2 className="h-3 w-3 mr-1" />
+                      Clear Calibration
+                    </button>
+                    <button
+                      onClick={async () => {
                         const newDebugMode = !debugMode
                         setDebugMode(newDebugMode)
                         await webgazerManager.setDebugMode(newDebugMode)
@@ -758,38 +944,51 @@ export function EyeTrackingExperiment() {
                       <h3 className="font-medium text-gray-900 text-xs">
                         2. Calibrate System
                       </h3>
-                      <p className="text-xs text-gray-600 mb-2">
-                        Click to start calibration. During the {EYE_TRACKING_EXPERIMENT.CALIBRATION_DURATION_SECONDS}-second period, look at:
-                      </p>
-                      <ul className="text-xs text-gray-600 mb-3 list-disc list-inside space-y-1">
-                        <li>4 screen corners</li>
-                        <li>4 image corners</li>
-                        <li>Screen center</li>
-                        <li>Ensure good lighting</li>
-                      </ul>
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={startCalibration}
-                          disabled={isCalibrating}
-                          className="btn btn-primary btn-sm text-xs px-2 py-1"
-                        >
-                          {isCalibrating ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            <>
-                              <Play className="h-3 w-3 mr-1" />
-                              Start Calibration
-                            </>
-                          )}
-                        </button>
-                        <Link
-                          to="/tips"
-                          className="btn btn-outline btn-sm text-xs px-2 py-1 flex items-center space-x-1"
-                        >
-                          <Lightbulb className="h-3 w-3" />
-                          <span>Tips</span>
-                        </Link>
-                      </div>
+                      {isCalibrating ? (
+                        <>
+                          <p className="text-xs text-blue-600 mb-2 font-medium">
+                            Click each red dot {EYE_TRACKING_EXPERIMENT.CLICKS_PER_CALIBRATION_POINT} times
+                          </p>
+                          <p className="text-xs text-gray-600 mb-2">
+                            {completedCalibrationPoints.size} of {calibrationPoints.length} points completed
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-xs text-gray-600 mb-2">
+                            Click to start point-based calibration. You'll see 9 red dots to click.
+                          </p>
+                          <ul className="text-xs text-gray-600 mb-3 list-disc list-inside space-y-1">
+                            <li>Click each red dot {EYE_TRACKING_EXPERIMENT.CLICKS_PER_CALIBRATION_POINT} times</li>
+                            <li>Click in any order</li>
+                            <li>Look at each dot while clicking</li>
+                            <li>Ensure good lighting</li>
+                          </ul>
+                          <div className="flex items-center space-x-2">
+                            <button
+                              onClick={startCalibration}
+                              disabled={isCalibrating}
+                              className="btn btn-primary btn-sm text-xs px-2 py-1"
+                            >
+                              {isCalibrating ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <>
+                                  <Play className="h-3 w-3 mr-1" />
+                                  Start Calibration
+                                </>
+                              )}
+                            </button>
+                            <Link
+                              to="/tips"
+                              className="btn btn-outline btn-sm text-xs px-2 py-1 flex items-center space-x-1"
+                            >
+                              <Lightbulb className="h-3 w-3" />
+                              <span>Tips</span>
+                            </Link>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                 )}

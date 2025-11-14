@@ -13,6 +13,7 @@ import { Experiments } from './pages/Experiments'
 import { ExperimentDetails } from './pages/ExperimentDetails'
 import { PictureExperiments } from './pages/PictureExperiments'
 import { EyeTrackingExperiment } from './pages/EyeTrackingExperiment'
+import { CalibrationLab } from './pages/CalibrationLab'
 import { MyPictures } from './pages/MyPictures'
 import { Profile } from './pages/Profile'
 import { EyeTrackingTips } from './pages/EyeTrackingTips'
@@ -50,6 +51,7 @@ function App() {
             </ErrorBoundary>
           } />
           <Route path="/eye-tracking-experiment" element={<EyeTrackingExperiment />} />
+          <Route path="/calibration-lab" element={<CalibrationLab />} />
           <Route path="/tips" element={<EyeTrackingTips />} />
           <Route path="/profile" element={<Profile />} />
         </Routes>
