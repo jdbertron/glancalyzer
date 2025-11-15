@@ -40,6 +40,7 @@ export function CalibrationLab() {
   const [currentCalibrationPointIndex, setCurrentCalibrationPointIndex] = useState<number | null>(null)
   const [completedCalibrationPoints, setCompletedCalibrationPoints] = useState<Set<number>>(new Set())
   const [clicksPerPoint, setClicksPerPoint] = useState<Map<number, number>>(new Map()) // Track clicks per point
+  const [lastClickedPointIndex, setLastClickedPointIndex] = useState<number | null>(null) // Track last clicked point to prevent double clicks
   // Note: Custom smoothing has been removed - we now use WebGazer's built-in Kalman filter
   // The smoothingAlpha state is kept for backward compatibility but is no longer used
 
@@ -372,6 +373,7 @@ export function CalibrationLab() {
       setCompletedCalibrationPoints(new Set())
       setClicksPerPoint(new Map())
       setCurrentCalibrationPointIndex(null)
+      setLastClickedPointIndex(null) // Reset last clicked point when starting new calibration
       
       // Start point-based calibration
       const { points } = await webgazerManager.startPointBasedCalibration()
@@ -406,6 +408,15 @@ export function CalibrationLab() {
       return
     }
 
+    // Prevent clicking the same point twice in a row - user must move to a different point first
+    if (lastClickedPointIndex === pointIndex) {
+      toast.error('Please click a different dot first. Move your eyes to another location before clicking again.', {
+        duration: 2000,
+        icon: '👁️',
+      })
+      return
+    }
+
     // Get current click count for this point
     const currentClicks = clicksPerPoint.get(pointIndex) || 0
     const newClickCount = currentClicks + 1
@@ -414,6 +425,9 @@ export function CalibrationLab() {
     
     // WebGazer automatically learns from this click - no manual recording needed
     // The click event will be captured by WebGazer's built-in self-calibration system
+    
+    // Update last clicked point index
+    setLastClickedPointIndex(pointIndex)
     
     // Update click count for UI feedback
     setClicksPerPoint(prev => new Map(prev).set(pointIndex, newClickCount))
@@ -465,7 +479,7 @@ export function CalibrationLab() {
         }, 500)
       }
     }
-  }, [calibrationPoints, clicksPerPoint, completedCalibrationPoints])
+  }, [calibrationPoints, clicksPerPoint, completedCalibrationPoints, lastClickedPointIndex])
 
   // Start tracking
   const startTracking = useCallback(async () => {

@@ -137,12 +137,14 @@ export function EyeTrackingExperiment() {
   const [calibrationPoints, setCalibrationPoints] = useState<Array<{ x: number; y: number }>>([])
   const [completedCalibrationPoints, setCompletedCalibrationPoints] = useState<Set<number>>(new Set())
   const [clicksPerPoint, setClicksPerPoint] = useState<Map<number, number>>(new Map())
+  const [lastClickedPointIndex, setLastClickedPointIndex] = useState<number | null>(null) // Track last clicked point to prevent double clicks
   
   // Refs
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
   const isProcessingStopRef = useRef<boolean>(false)
   const imageRef = useRef<HTMLImageElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const animationFrameRef = useRef<number | null>(null)
   
   // Convex queries and mutations
   const picture = useQuery(api.pictures.getPicture, pictureId ? { pictureId: pictureId as any } : 'skip')
@@ -158,10 +160,14 @@ export function EyeTrackingExperiment() {
         .then(async () => {
           setIsInitialized(true)
           
-          // Wait a moment for WebGazer to fully load calibration data
-          await new Promise(resolve => setTimeout(resolve, 1000))
+          // Wait for WebGazer to load calibration data from IndexedDB
+          // WebGazer restores its regression model from IndexedDB during initialization
+          await new Promise(resolve => setTimeout(resolve, 1500))
           
-          // Check if existing calibration is available
+          // Check once for existing calibration
+          // WebGazer stores calibration in IndexedDB (via localForage) at:
+          // IndexedDB/localforage/keyvaluepairs/webgazerGlobalData
+          // Our lastCalibrationResult is in-memory only, so we check WebGazer's storage
           const hasExistingCalibration = await webgazerManager.hasExistingCalibration()
           const savedCalibration = webgazerManager.getLastCalibrationResult()
           
@@ -178,6 +184,7 @@ export function EyeTrackingExperiment() {
             }
             
             // Use saved calibration if available and valid, otherwise use auto result
+            // Note: savedCalibration is in-memory only and may be null after page refresh
             if (savedCalibration?.isValid) {
               setCalibrationResult(savedCalibration)
             } else {
@@ -185,9 +192,10 @@ export function EyeTrackingExperiment() {
             }
             
             setIsCalibrated(true)
-            console.log('✅ [React] Existing calibration detected - automatically skipping calibration step')
+            console.log('✅ [React] Existing calibration detected in WebGazer IndexedDB')
             toast.success('Existing calibration found and loaded! You can start tracking now, or recalibrate if needed.')
           } else {
+            console.log('ℹ️ [React] No existing calibration found - user will need to calibrate')
             toast.success('WebGazer initialized! Click "Start Calibration" to begin.')
           }
         })
@@ -236,6 +244,71 @@ export function EyeTrackingExperiment() {
     return () => clearInterval(interval)
   }, [])
 
+
+  // Draw debug gaze point on canvas (for calibration and tracking)
+  const drawDebugGaze = useCallback(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    // Set canvas size to match viewport (WebGazer coordinates are in viewport space)
+    canvas.width = window.innerWidth
+    canvas.height = window.innerHeight
+
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+    // Draw current gaze point during calibration or tracking
+    if (currentGazePoint && (isCalibrating || isTracking)) {
+      // Use raw WebGazer coordinates directly (they're in viewport space)
+      let x = currentGazePoint.x
+      let y = currentGazePoint.y
+
+      // Draw outer ring (red for calibration, green for tracking)
+      ctx.beginPath()
+      ctx.arc(x, y, 20, 0, 2 * Math.PI)
+      ctx.strokeStyle = isCalibrating ? `rgba(255, 0, 0, 0.8)` : `rgba(0, 255, 0, 0.8)`
+      ctx.lineWidth = 3
+      ctx.stroke()
+
+      // Draw center point
+      ctx.beginPath()
+      ctx.arc(x, y, 8, 0, 2 * Math.PI)
+      ctx.fillStyle = isCalibrating ? `rgba(255, 0, 0, 0.9)` : `rgba(0, 255, 0, 0.9)`
+      ctx.fill()
+    }
+
+    // Continue animation loop if calibrating or tracking
+    if ((isCalibrating || isTracking) && currentGazePoint) {
+      animationFrameRef.current = requestAnimationFrame(drawDebugGaze)
+    } else {
+      animationFrameRef.current = null
+    }
+  }, [currentGazePoint, isCalibrating, isTracking])
+
+  // Start drawing debug gaze animation loop
+  useEffect(() => {
+    if (isCalibrating || isTracking) {
+      // Start the animation loop
+      const startAnimation = () => {
+        if (animationFrameRef.current) {
+          cancelAnimationFrame(animationFrameRef.current)
+        }
+        drawDebugGaze()
+      }
+      
+      startAnimation()
+    }
+
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current)
+      }
+    }
+  }, [drawDebugGaze, isCalibrating, isTracking])
+
   // Start calibration (point-based, like CalibrationLab)
   const startCalibration = useCallback(async () => {
     console.log('🎯 [React] Start calibration button clicked')
@@ -244,6 +317,11 @@ export function EyeTrackingExperiment() {
       setIsCalibrating(true)
       setCompletedCalibrationPoints(new Set())
       setClicksPerPoint(new Map())
+      setLastClickedPointIndex(null) // Reset last clicked point when starting new calibration
+      
+      // Enable debug mode during calibration (like CalibrationLab)
+      setDebugMode(true)
+      await webgazerManager.setDebugMode(true)
       
       // Start point-based calibration (9-point grid with red dots)
       const { points } = await webgazerManager.startPointBasedCalibration()
@@ -262,14 +340,27 @@ export function EyeTrackingExperiment() {
       return
     }
 
+    // Prevent clicking the same point twice in a row - user must move to a different point first
+    if (lastClickedPointIndex === pointIndex) {
+      toast.error('Please click a different dot first. Move your eyes to another location before clicking again.', {
+        duration: 2000,
+        icon: '👁️',
+      })
+      return
+    }
+
     const currentClicks = clicksPerPoint.get(pointIndex) || 0
     const newClicks = currentClicks + 1
+    
+    // Update last clicked point index
+    setLastClickedPointIndex(pointIndex)
+    
     setClicksPerPoint(prev => new Map(prev).set(pointIndex, newClicks))
 
     if (newClicks >= EYE_TRACKING_EXPERIMENT.CLICKS_PER_CALIBRATION_POINT) {
       setCompletedCalibrationPoints(prev => new Set(prev).add(pointIndex))
     }
-  }, [clicksPerPoint, completedCalibrationPoints])
+  }, [clicksPerPoint, completedCalibrationPoints, lastClickedPointIndex])
 
   // Watch for when all calibration points are completed
   useEffect(() => {
@@ -475,11 +566,40 @@ export function EyeTrackingExperiment() {
       const viewportHeight = window.innerHeight
       
       // Get calibration domain (Webgazer's coordinate space)
-      const calDomain = webgazerManager.getCalibrationDomain()
+      // If calibration domain is not available, compute it from collected gaze points
+      // or use viewport as fallback (WebGazer coordinates are typically in viewport space)
+      let calDomain = webgazerManager.getCalibrationDomain()
       
-      if (!calDomain) {
-        toast.error('No calibration data available. Please calibrate first.')
-        return
+      if (!calDomain && collectedData.length > 0) {
+        // Compute domain from collected gaze points
+        const xValues = collectedData.map(p => p.x)
+        const yValues = collectedData.map(p => p.y)
+        const minX = Math.min(...xValues)
+        const maxX = Math.max(...xValues)
+        const minY = Math.min(...yValues)
+        const maxY = Math.max(...yValues)
+        
+        // Add some padding to the domain
+        const paddingX = (maxX - minX) * 0.1 || viewportWidth * 0.1
+        const paddingY = (maxY - minY) * 0.1 || viewportHeight * 0.1
+        
+        calDomain = {
+          minX: Math.max(0, minX - paddingX),
+          maxX: maxX + paddingX,
+          minY: Math.max(0, minY - paddingY),
+          maxY: maxY + paddingY
+        }
+        
+        console.log('📊 [React] Computed calibration domain from collected gaze points:', calDomain)
+      } else if (!calDomain) {
+        // Fallback: use viewport as calibration domain (WebGazer typically uses viewport coordinates)
+        calDomain = {
+          minX: 0,
+          maxX: viewportWidth,
+          minY: 0,
+          maxY: viewportHeight
+        }
+        console.log('📊 [React] Using viewport as calibration domain fallback:', calDomain)
       }
       
       console.log('📊 [React] Coordinate system analysis:', {
@@ -693,6 +813,9 @@ export function EyeTrackingExperiment() {
       if (intervalRef.current) {
         clearInterval(intervalRef.current)
       }
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current)
+      }
       // Don't cleanup WebGazer here - let it persist globally
     }
   }, [])
@@ -847,18 +970,28 @@ export function EyeTrackingExperiment() {
                     </div>
                   )}
                   
-                  {isTracking && (
-                    <div className="absolute inset-0 pointer-events-none">
+                  {/* Canvas for debug gaze visualization during calibration and tracking */}
+                  {(isCalibrating || isTracking) && (
+                    <>
+                      {/* Fixed canvas covering full viewport for debug gaze visualization */}
                       <canvas
                         ref={canvasRef}
-                        className="w-full h-full"
-                        style={{ position: 'absolute', top: 0, left: 0 }}
+                        className="fixed pointer-events-none"
+                        style={{ 
+                          top: 0, 
+                          left: 0, 
+                          width: '100vw', 
+                          height: '100vh',
+                          zIndex: 10
+                        }}
                       />
-                      {/* Tracking indicator */}
-                      <div className="absolute top-4 right-4 bg-red-500 text-white px-3 py-1 rounded-full text-sm font-medium animate-pulse">
-                        🔴 Tracking Active ({gazeData.length} points)
-                      </div>
-                    </div>
+                      {/* Tracking indicator - only show during tracking */}
+                      {isTracking && (
+                        <div className="absolute top-4 right-4 bg-red-500 text-white px-3 py-1 rounded-full text-sm font-medium animate-pulse z-20">
+                          🔴 Tracking Active ({gazeData.length} points)
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               </div>

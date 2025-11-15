@@ -582,18 +582,29 @@ class WebGazerManager {
     if (this.isPaused && this.webgazer) {
       console.log('🔄 [WebGazerManager] Resuming WebGazer after pause...')
       try {
-        // Check if WebGazer is ready, if not, call begin() to resume
-        // begin() will re-initialize the webcam and restore calibration from localStorage
-        if (!this.webgazer.isReady()) {
-          console.log('🔄 [WebGazerManager] WebGazer not ready, calling begin() to resume...')
-          await this.webgazer.begin()
-          console.log('✅ [WebGazerManager] WebGazer resumed (calibration restored from localStorage)')
-          
-          // Wait a bit for video element to be ready
-          await new Promise(resolve => setTimeout(resolve, 1000))
+        // Always call resume() when paused, regardless of isReady() status
+        // isReady() can return true even when paused, so we need to explicitly resume
+        if (this.webgazer.isReady()) {
+          console.log('🔄 [WebGazerManager] WebGazer is ready but paused, calling resume()...')
+          try {
+            await this.webgazer.resume()
+            console.log('✅ [WebGazerManager] WebGazer resumed from pause')
+          } catch (resumeError) {
+            // If resume() fails (e.g., video tracks were stopped), fall back to begin()
+            console.warn('⚠️ [WebGazerManager] resume() failed, falling back to begin():', resumeError)
+            console.log('🔄 [WebGazerManager] Calling begin() to fully reinitialize...')
+            await this.webgazer.begin()
+            console.log('✅ [WebGazerManager] WebGazer reinitialized via begin() (calibration restored from IndexedDB)')
+          }
         } else {
-          console.log('✅ [WebGazerManager] WebGazer already ready')
+          console.log('🔄 [WebGazerManager] WebGazer not ready, calling begin() to reinitialize...')
+          await this.webgazer.begin()
+          console.log('✅ [WebGazerManager] WebGazer reinitialized (calibration restored from IndexedDB)')
         }
+        
+        // Wait a bit for video element and webcam to be ready
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        
         this.isPaused = false
         
         // Reconfigure video visibility
@@ -628,6 +639,31 @@ class WebGazerManager {
     if (this.webgazer) {
       await this.webgazer.showVideoPreview(this.debugMode)
       await this.webgazer.showPredictionPoints(this.debugMode)
+      
+      // Verify WebGazer is actually ready and tracking
+      if (!this.webgazer.isReady()) {
+        console.warn('⚠️ [WebGazerManager] WebGazer not ready after resume, attempting to reinitialize...')
+        await this.webgazer.begin()
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      }
+      
+      // Double-check that video is actually playing
+      const videoElements = document.querySelectorAll('video')
+      let hasActiveVideo = false
+      videoElements.forEach(video => {
+        if (video.srcObject) {
+          const stream = video.srcObject as MediaStream
+          const activeTracks = stream.getTracks().filter(track => track.readyState === 'live')
+          if (activeTracks.length > 0) {
+            hasActiveVideo = true
+            console.log('✅ [WebGazerManager] Found active video stream with', activeTracks.length, 'live track(s)')
+          }
+        }
+      })
+      
+      if (!hasActiveVideo) {
+        console.warn('⚠️ [WebGazerManager] No active video stream detected after resume - tracking may not work')
+      }
     }
   }
 
@@ -952,11 +988,11 @@ class WebGazerManager {
     this.isTracking = false
     this.isCalibrating = false
     // Note: calibrationData and lastCalibrationResult are preserved
-    // WebGazer's calibration is saved to localStorage via saveDataAcrossSessions(true)
-    console.log('✅ [WebGazerManager] Webcam stopped (calibration preserved)')
+    // WebGazer's calibration is saved to IndexedDB (via localForage) via saveDataAcrossSessions(true)
+    console.log('✅ [WebGazerManager] Webcam stopped (calibration preserved in IndexedDB)')
   }
 
-  // Check if WebGazer has existing calibration data in localStorage
+  // Check if WebGazer has existing calibration data in IndexedDB (via localForage)
   private async checkForExistingCalibration(): Promise<boolean> {
     if (!this.webgazer) return false
     
@@ -969,47 +1005,135 @@ class WebGazerManager {
     }
     
     try {
-      // Check localStorage for WebGazer's stored data
-      // WebGazer stores data with keys like 'webgazer_*' or uses IndexedDB via localForage
-      // We'll check both localStorage and try to access WebGazer's internal state
-      let hasStoredData = false
-      
-      // Check localStorage for webgazer keys
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i)
-        if (key && (key.startsWith('webgazer_') || key.includes('webgazer'))) {
-          const value = localStorage.getItem(key)
-          // Check if the value contains calibration data (not just empty or default)
-          if (value && value.length > 10) {
-            hasStoredData = true
-            console.log(`📦 [WebGazerManager] Found WebGazer data in localStorage: ${key}`)
-            break
-          }
+      // Primary check: IndexedDB via localForage
+      // WebGazer stores data in IndexedDB/localforage/keyvaluepairs/webgazerGlobalData
+      // This is the most reliable check since we know data exists there
+      let hasIndexedDBData = false
+      try {
+        if ('indexedDB' in window) {
+          console.log('🔍 [WebGazerManager] Checking IndexedDB for webgazerGlobalData...')
+          const dbName = 'localforage'
+          const request = indexedDB.open(dbName)
+          
+          await new Promise<void>((resolve) => {
+            request.onsuccess = () => {
+              const db = request.result
+              console.log('🔍 [WebGazerManager] IndexedDB opened, object stores:', Array.from(db.objectStoreNames))
+              
+              if (db.objectStoreNames.contains('keyvaluepairs')) {
+                const transaction = db.transaction(['keyvaluepairs'], 'readonly')
+                const store = transaction.objectStore('keyvaluepairs')
+                const getRequest = store.get('webgazerGlobalData')
+                
+                getRequest.onsuccess = () => {
+                  const data = getRequest.result
+                  console.log('🔍 [WebGazerManager] IndexedDB get result:', {
+                    hasResult: !!data,
+                    resultType: typeof data,
+                    resultKeys: data ? Object.keys(data) : [],
+                    hasValue: !!(data && data.value),
+                    valueType: data?.value ? typeof data.value : 'none'
+                  })
+                  
+                  if (data) {
+                    // Try different data structures - localForage might store it differently
+                    let valueToCheck = data.value || data
+                    if (typeof valueToCheck === 'string') {
+                      try {
+                        valueToCheck = JSON.parse(valueToCheck)
+                      } catch (e) {
+                        // Not JSON, use as-is
+                      }
+                    }
+                    
+                    const valueStr = JSON.stringify(valueToCheck)
+                    if (valueStr && valueStr.length > 100) {
+                      hasIndexedDBData = true
+                      console.log('📦 [WebGazerManager] Found WebGazer data in IndexedDB (length:', valueStr.length, ')')
+                    } else {
+                      console.log('ℹ️ [WebGazerManager] IndexedDB data too small or empty (length:', valueStr?.length || 0, ')')
+                    }
+                  } else {
+                    console.log('ℹ️ [WebGazerManager] No data found in IndexedDB for key webgazerGlobalData')
+                  }
+                  resolve()
+                }
+                
+                getRequest.onerror = () => {
+                  console.log('⚠️ [WebGazerManager] Error reading from IndexedDB:', getRequest.error)
+                  resolve()
+                }
+              } else {
+                console.log('ℹ️ [WebGazerManager] IndexedDB database exists but no keyvaluepairs store')
+                resolve()
+              }
+            }
+            
+            request.onerror = () => {
+              console.log('⚠️ [WebGazerManager] Error opening IndexedDB:', request.error)
+              resolve()
+            }
+            
+            request.onupgradeneeded = () => {
+              console.log('ℹ️ [WebGazerManager] IndexedDB upgrade needed')
+            }
+          })
+        } else {
+          console.log('ℹ️ [WebGazerManager] IndexedDB not available in this browser')
         }
+      } catch (indexedDBError) {
+        console.log('⚠️ [WebGazerManager] IndexedDB check exception:', indexedDBError)
       }
       
-      // Check WebGazer's internal regression model
-      // WebGazer stores the trained model internally when calibration exists
+      // Secondary check: WebGazer's internal regression model
+      // WebGazer loads the trained model from IndexedDB asynchronously
+      // The model might not be loaded yet, so we check multiple paths
       const wgAny = this.webgazer as any
-      const hasModel = wgAny.ridge && wgAny.ridge.regression && wgAny.ridge.regression.beta && wgAny.ridge.regression.beta.length > 0
       
-      // Only consider calibration existing if we have actual calibration data (model or stored data)
-      // Don't rely on isReady() alone - it just means WebGazer initialized, not that it has calibration
-      const result = hasStoredData || hasModel
+      // Log the entire WebGazer object structure to see what's actually there
+      console.log('🔍 [WebGazerManager] WebGazer object keys:', Object.keys(wgAny || {}))
+      
+      // Check various possible paths for the regression model
+      const hasModel = !!(
+        (wgAny.ridge && wgAny.ridge.regression && wgAny.ridge.regression.beta && wgAny.ridge.regression.beta.length > 0) ||
+        (wgAny.ridge && wgAny.ridge.beta && wgAny.ridge.beta.length > 0) ||
+        (wgAny.regression && wgAny.regression.beta && wgAny.regression.beta.length > 0) ||
+        (wgAny.model && wgAny.model.beta && wgAny.model.beta.length > 0)
+      )
+      
+      // Log detailed model structure for debugging
+      console.log('🔍 [WebGazerManager] Model structure check:', {
+        hasRidge: !!wgAny.ridge,
+        hasRidgeRegression: !!(wgAny.ridge && wgAny.ridge.regression),
+        hasRidgeRegressionBeta: !!(wgAny.ridge && wgAny.ridge.regression && wgAny.ridge.regression.beta),
+        ridgeBetaLength: wgAny.ridge?.regression?.beta?.length || 0,
+        hasRidgeBeta: !!(wgAny.ridge && wgAny.ridge.beta),
+        hasRegression: !!wgAny.regression,
+        hasRegressionBeta: !!(wgAny.regression && wgAny.regression.beta),
+        hasModel: !!wgAny.model,
+        hasModelBeta: !!(wgAny.model && wgAny.model.beta),
+        // Check if there's a storedData or calibrationData property
+        hasStoredData: !!wgAny.storedData,
+        hasCalibrationData: !!wgAny.calibrationData
+      })
+      
+      // Calibration exists if we have IndexedDB data (primary) or the model (secondary)
+      // IndexedDB is more reliable since WebGazer loads the model asynchronously
+      const result = hasIndexedDBData || hasModel
       
       if (result) {
         console.log('✅ [WebGazerManager] Calibration data detected:', {
-          hasStoredData,
-          hasModel
+          hasIndexedDBData,
+          hasModel,
+          note: hasIndexedDBData ? 'Found in IndexedDB' : 'Found in regression model'
         })
       } else {
-        // Log why we're not detecting calibration (for debugging)
         const isReady = this.webgazer.isReady && this.webgazer.isReady()
         console.log('ℹ️ [WebGazerManager] No calibration data found:', {
           isReady,
-          hasStoredData,
+          hasIndexedDBData,
           hasModel,
-          note: 'isReady() only indicates WebGazer initialized, not that calibration exists'
+          note: 'Checked both IndexedDB and regression model'
         })
       }
       
@@ -1046,7 +1170,46 @@ class WebGazerManager {
         this.isCalibrating = false
       }
       
-      // Use the same comprehensive clearing method
+      // First, specifically delete the webgazerGlobalData key from IndexedDB
+      // This is more reliable than deleting the entire database
+      if ('indexedDB' in window) {
+        try {
+          const dbName = 'localforage'
+          const request = indexedDB.open(dbName)
+          
+          await new Promise<void>((resolve) => {
+            request.onsuccess = () => {
+              const db = request.result
+              if (db.objectStoreNames.contains('keyvaluepairs')) {
+                const transaction = db.transaction(['keyvaluepairs'], 'readwrite')
+                const store = transaction.objectStore('keyvaluepairs')
+                const deleteRequest = store.delete('webgazerGlobalData')
+                
+                deleteRequest.onsuccess = () => {
+                  console.log('  🗑️ Deleted webgazerGlobalData from IndexedDB')
+                  resolve()
+                }
+                
+                deleteRequest.onerror = () => {
+                  console.log('  ⚠️ Error deleting webgazerGlobalData from IndexedDB:', deleteRequest.error)
+                  resolve()
+                }
+              } else {
+                resolve()
+              }
+            }
+            
+            request.onerror = () => {
+              console.log('  ⚠️ Error opening IndexedDB for deletion:', request.error)
+              resolve()
+            }
+          })
+        } catch (error) {
+          console.log('  ⚠️ Exception deleting from IndexedDB:', error)
+        }
+      }
+      
+      // Also use the comprehensive clearing method for any other storage
       await this.clearAllWebGazerStorage()
       
       // Clear internal calibration state

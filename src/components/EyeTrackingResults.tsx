@@ -48,6 +48,38 @@ export function EyeTrackingResults({
     setImageLoaded(false)
   }, [imageUrl])
 
+  // Function to update canvas position and size
+  const updateCanvasPosition = useCallback(() => {
+    if (!canvasRef.current || !imageRef.current) return
+    
+    const imageWidth = imageRef.current.offsetWidth
+    const imageHeight = imageRef.current.offsetHeight
+    
+    if (imageWidth === 0 || imageHeight === 0) return
+    
+    // Get the image's position relative to its container
+    const container = imageRef.current.parentElement!
+    const imageRect = imageRef.current.getBoundingClientRect()
+    const containerRect = container.getBoundingClientRect()
+    
+    // Calculate position relative to container (accounting for any centering)
+    const canvasLeft = imageRect.left - containerRect.left
+    const canvasTop = imageRect.top - containerRect.top
+    
+    // Position and size canvas to match image exactly
+    canvasRef.current.style.left = `${canvasLeft}px`
+    canvasRef.current.style.top = `${canvasTop}px`
+    canvasRef.current.style.width = `${imageWidth}px`
+    canvasRef.current.style.height = `${imageHeight}px`
+    
+    // Set canvas internal resolution to match displayed image size (1:1 pixel ratio)
+    if (canvasRef.current.width !== imageWidth || canvasRef.current.height !== imageHeight) {
+      canvasRef.current.width = imageWidth
+      canvasRef.current.height = imageHeight
+    }
+  }, [])
+
+
   // Draw heatmap overlay - memoized to prevent stale closures
   const drawHeatmap = useCallback(() => {
     const canvas = canvasRef.current
@@ -76,21 +108,19 @@ export function EyeTrackingResults({
     // Scale based on the ratio between displayed image size and natural size
     // This accounts for the image being displayed smaller in results view vs experiment view
     data.gazePoints.forEach((point, index) => {
-      // Get the actual displayed image size (may be different from natural size due to CSS constraints)
-      const displayedWidth = imageRef.current!.offsetWidth
-      const displayedHeight = imageRef.current!.offsetHeight
-      
-      // Scale coordinates from natural dimensions directly to canvas
-      // Coordinates are stored in natural image space (from experiment)
-      const x = (point.x * APP_CONFIG.FUDGE_FACTOR / imageWidth) * canvas.width
-      const y = (point.y * APP_CONFIG.FUDGE_FACTOR / imageHeight) * canvas.height
+      // Scale coordinates from natural image space to displayed image space
+      // point.x/y are in natural image coordinates (0 to imageWidth/Height)
+      // canvas.width/height match the displayed image size
+      // Simple proportional scaling: (point.x / naturalWidth) * displayedWidth
+      const x = (point.x / imageWidth) * canvas.width
+      const y = (point.y / imageHeight) * canvas.height
       
       // Debug: Log first few points to see actual coordinates
       if (index < 3) {
         console.log(`🔍 [Heatmap] Point ${index}:`, {
           originalNaturalCoords: { x: point.x, y: point.y },
           naturalDimensions: { width: imageWidth, height: imageHeight },
-          displayedDimensions: { width: displayedWidth, height: displayedHeight },
+          displayedDimensions: { width: imageRef.current!.offsetWidth, height: imageRef.current!.offsetHeight },
           canvasDimensions: { width: canvas.width, height: canvas.height },
           finalCanvasCoords: { x, y },
           xRatio: point.x / imageWidth,
@@ -156,10 +186,11 @@ export function EyeTrackingResults({
     let validPoints = 0
     
     pathData.forEach((point, index) => {
-      // Scale coordinates from natural dimensions directly to canvas
-      // Coordinates are stored in natural image space (from experiment)
-      const x = (point.x * APP_CONFIG.FUDGE_FACTOR / imageWidth) * canvas.width
-      const y = (point.y * APP_CONFIG.FUDGE_FACTOR / imageHeight) * canvas.height
+      // Scale coordinates from natural image space to displayed image space
+      // point.x/y are in natural image coordinates (0 to imageWidth/Height)
+      // canvas.width/height match the displayed image size
+      const x = (point.x / imageWidth) * canvas.width
+      const y = (point.y / imageHeight) * canvas.height
       
       // CRITICAL: Log first and last points in detail
       const isFirstPoint = index === 0
@@ -208,10 +239,9 @@ export function EyeTrackingResults({
 
     // Draw points with timing-based colors
     pathData.forEach((point, index) => {
-      // Scale coordinates from natural dimensions directly to canvas
-      // Coordinates are stored in natural image space (from experiment)
-      const x = (point.x * APP_CONFIG.FUDGE_FACTOR / imageWidth) * canvas.width
-      const y = (point.y * APP_CONFIG.FUDGE_FACTOR / imageHeight) * canvas.height
+      // Scale coordinates from natural image space to displayed image space
+      const x = (point.x / imageWidth) * canvas.width
+      const y = (point.y / imageHeight) * canvas.height
       
       ctx.beginPath()
       ctx.arc(x, y, 4, 0, 2 * Math.PI)
@@ -258,10 +288,9 @@ export function EyeTrackingResults({
     // Coordinates are in natural image dimensions
     // Scale directly to canvas (canvas size matches displayed image size)
     data.fixationPoints.forEach((fixation, index) => {
-      // TEMPORARY: Scale by 10% to account for mapping issues
-      // Scale coordinates from natural dimensions directly to canvas
-      const x = (fixation.x * 0.1 / imageWidth) * canvas.width
-      const y = (fixation.y * 0.1 / imageHeight) * canvas.height
+      // Scale coordinates from natural image space to displayed image space
+      const x = (fixation.x / imageWidth) * canvas.width
+      const y = (fixation.y / imageHeight) * canvas.height
       
       const radius = Math.max(8, Math.min(40, fixation.duration / 50)) // Size based on duration
         
@@ -323,25 +352,8 @@ export function EyeTrackingResults({
       return
     }
     
-    // Ensure canvas is properly sized (do this once, before drawing)
-    const imageWidth = imageRef.current.offsetWidth
-    const imageHeight = imageRef.current.offsetHeight
-    
-    if (imageWidth === 0 || imageHeight === 0) {
-      console.log('Image dimensions not ready yet:', { width: imageWidth, height: imageHeight })
-      return
-    }
-    
-    // Only resize if dimensions changed (prevents unnecessary clearing)
-    const currentCanvasWidth = canvasRef.current.width
-    const currentCanvasHeight = canvasRef.current.height
-    
-    if (currentCanvasWidth !== imageWidth || currentCanvasHeight !== imageHeight) {
-      console.log('Canvas resizing from', { width: currentCanvasWidth, height: currentCanvasHeight }, 
-                   'to', { width: imageWidth, height: imageHeight })
-      canvasRef.current.width = imageWidth
-      canvasRef.current.height = imageHeight
-    }
+    // Update canvas position and size to match image
+    updateCanvasPosition()
     
     // Small delay to ensure canvas is ready after any resize
     const timeoutId = setTimeout(() => {
@@ -359,7 +371,29 @@ export function EyeTrackingResults({
     return () => {
       clearTimeout(timeoutId)
     }
-  }, [activeTab, data, imageLoaded, drawHeatmap, drawScanPath, drawFixations])
+  }, [activeTab, data, imageLoaded, drawHeatmap, drawScanPath, drawFixations, updateCanvasPosition])
+
+  // Add window resize listener to update canvas position and redraw
+  useEffect(() => {
+    const handleResize = () => {
+      if (imageLoaded && canvasRef.current && imageRef.current) {
+        updateCanvasPosition()
+        // Small delay to ensure canvas is ready, then redraw
+        setTimeout(() => {
+          if (activeTab === 'heatmap') {
+            drawHeatmap()
+          } else if (activeTab === 'scanpath') {
+            drawScanPath()
+          } else if (activeTab === 'fixations') {
+            drawFixations()
+          }
+        }, 100)
+      }
+    }
+    
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [imageLoaded, activeTab, updateCanvasPosition, drawHeatmap, drawScanPath, drawFixations])
 
   // Calculate statistics
   const stats = {
@@ -529,8 +563,7 @@ export function EyeTrackingResults({
                 {/* Canvas for visualization overlays */}
                 <canvas
                   ref={canvasRef}
-                  className="absolute inset-0 pointer-events-none"
-                  style={{ width: '100%', height: '100%' }}
+                  className="absolute pointer-events-none"
                 />
               </div>
             </div>
