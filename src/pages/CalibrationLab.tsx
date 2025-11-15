@@ -408,8 +408,14 @@ export function CalibrationLab() {
       return
     }
 
+    // Check if all other points are completed
+    const allOtherPointsCompleted = calibrationPoints.every((_, idx) => 
+      idx === pointIndex || completedCalibrationPoints.has(idx)
+    )
+
     // Prevent clicking the same point twice in a row - user must move to a different point first
-    if (lastClickedPointIndex === pointIndex) {
+    // EXCEPTION: If all other points are completed, allow clicking the same point again
+    if (lastClickedPointIndex === pointIndex && !allOtherPointsCompleted) {
       toast.error('Please click a different dot first. Move your eyes to another location before clicking again.', {
         duration: 2000,
         icon: '👁️',

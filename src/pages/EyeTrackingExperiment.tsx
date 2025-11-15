@@ -348,8 +348,14 @@ export function EyeTrackingExperiment() {
       return
     }
 
+    // Check if all other points are completed
+    const allOtherPointsCompleted = calibrationPoints.every((_, idx) => 
+      idx === pointIndex || completedCalibrationPoints.has(idx)
+    )
+
     // Prevent clicking the same point twice in a row - user must move to a different point first
-    if (lastClickedPointIndex === pointIndex) {
+    // EXCEPTION: If all other points are completed, allow clicking the same point again
+    if (lastClickedPointIndex === pointIndex && !allOtherPointsCompleted) {
       // Removed toast - less distracting for eye tracking app
       return
     }
@@ -365,7 +371,7 @@ export function EyeTrackingExperiment() {
     if (newClicks >= EYE_TRACKING_EXPERIMENT.CLICKS_PER_CALIBRATION_POINT) {
       setCompletedCalibrationPoints(prev => new Set(prev).add(pointIndex))
     }
-  }, [clicksPerPoint, completedCalibrationPoints, lastClickedPointIndex])
+  }, [clicksPerPoint, completedCalibrationPoints, lastClickedPointIndex, calibrationPoints])
 
   // Watch for when all calibration points are completed
   useEffect(() => {
