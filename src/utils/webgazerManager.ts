@@ -145,9 +145,11 @@ class WebGazerManager {
       stream.getTracks().forEach(track => track.stop())
       console.log('✅ [WebGazerManager] Webcam access granted')
 
-      // Import WebGazer
+      // Import WebGazer from local project (../WebGazer)
+      // This uses the local WebGazer package specified in package.json: "webgazer": "file:../WebGazer"
       const webgazerModule = await import('webgazer')
       const wg = webgazerModule.default || webgazerModule as any
+      console.log('📦 [WebGazerManager] Using local WebGazer package from ../WebGazer')
 
       // Configure WebGazer
       wg.setRegression('ridge')
@@ -247,6 +249,11 @@ class WebGazerManager {
       // Start WebGazer
       await wg.begin()
       
+      // Ensure trackMouseMovements stays false after begin() (WebGazer might reset it)
+      // This prevents the regression model from being recalculated constantly
+      wg.params.trackMouseMovements = false
+      console.log('🖱️ [WebGazerManager] Mouse tracking disabled (trackMouseMovements = false) to prevent model recalculation')
+      
       // If we cleared storage, also clear the internal model state after begin()
       // This ensures WebGazer doesn't have stale data in memory
       if (this.calibrationJustCleared) {
@@ -270,11 +277,6 @@ class WebGazerManager {
         console.log('✅ [WebGazerManager] Re-enabled saveDataAcrossSessions after fresh start')
       }
       console.log('✅ [WebGazerManager] WebGazer started')
-
-      // Keep mouse tracking enabled - WebGazer uses it for self-calibration
-      // The demo page relies on mouse movements and clicks to train the model
-      // We'll only disable it during actual tracking (not during calibration)
-      console.log('🖱️ [WebGazerManager] Mouse tracking enabled for WebGazer self-calibration')
 
       // Configure video and overlay visibility based on debug mode
       await wg.showVideoPreview(this.debugMode)
@@ -377,14 +379,15 @@ class WebGazerManager {
     }, EYE_TRACKING_EXPERIMENT.CALIBRATION_DURATION_SECONDS * 1000)
   }
 
-  // Re-enable mouse tracking for calibration (needed for self-calibration)
+  // Note: Mouse tracking is kept disabled (trackMouseMovements = false)
+  // This prevents the regression model from being recalculated constantly
+  // WebGazer will use the existing calibration model without continuous learning
   private enableMouseTracking(): void {
     if (!this.webgazer) return
     
-    // Note: WebGazer automatically re-adds mouse listeners when it starts
-    // We just need to ensure it's initialized. The library handles this internally.
-    // If mouse tracking was disabled, WebGazer will re-enable it when begin() is called.
-    console.log('🖱️ [WebGazerManager] Mouse tracking should be enabled for calibration (handled by WebGazer)')
+    // Mouse tracking remains disabled to prevent model drift
+    // The calibration model is frozen after initial calibration
+    console.log('🖱️ [WebGazerManager] Mouse tracking remains disabled to prevent model recalculation')
   }
 
   // Start point-based calibration (9-point grid - recommended)
@@ -397,9 +400,14 @@ class WebGazerManager {
     this.isCalibrating = true
     this.calibrationData = []
 
-    // Re-enable mouse tracking for calibration (WebGazer needs it to learn)
-    // Note: WebGazer should handle this automatically, but we ensure it's ready
+    // Ensure mouse tracking remains disabled (prevents model recalculation)
+    // The calibration model should be frozen and not continuously updated
     this.enableMouseTracking()
+    
+    // Ensure trackMouseMovements is explicitly set to false
+    if (this.webgazer) {
+      this.webgazer.params.trackMouseMovements = false
+    }
 
     // Ensure video visibility matches debug mode
     if (this.webgazer) {
@@ -433,10 +441,9 @@ class WebGazerManager {
     
     // Note: Center point is already included in the 3x3 grid at row 1, col 1 (point 5, 0-indexed: 4)
 
-    // Mouse tracking is already enabled from initialization
-    // WebGazer automatically learns from mouse movements and clicks during calibration
-    // This is how the demo page works - no manual intervention needed
-    console.log('🖱️ [WebGazerManager] Mouse tracking enabled - WebGazer will learn from clicks and movements naturally')
+    // Mouse tracking is disabled to prevent the regression model from being recalculated
+    // The calibration model remains frozen and stable
+    console.log('🖱️ [WebGazerManager] Mouse tracking disabled - model will remain frozen during calibration')
 
     console.log('📐 [WebGazerManager] Generated 9-point calibration grid (3x3, center is point 5):', points)
     return { points }
@@ -604,18 +611,24 @@ class WebGazerManager {
           console.log('🔄 [WebGazerManager] WebGazer is ready but paused, calling resume()...')
           try {
             await this.webgazer.resume()
-            console.log('✅ [WebGazerManager] WebGazer resumed from pause')
+            // Ensure trackMouseMovements stays false after resume
+            this.webgazer.params.trackMouseMovements = false
+            console.log('✅ [WebGazerManager] WebGazer resumed from pause (trackMouseMovements = false)')
           } catch (resumeError) {
             // If resume() fails (e.g., video tracks were stopped), fall back to begin()
             console.warn('⚠️ [WebGazerManager] resume() failed, falling back to begin():', resumeError)
             console.log('🔄 [WebGazerManager] Calling begin() to fully reinitialize...')
             await this.webgazer.begin()
-            console.log('✅ [WebGazerManager] WebGazer reinitialized via begin() (calibration restored from IndexedDB)')
+            // Ensure trackMouseMovements stays false after begin()
+            this.webgazer.params.trackMouseMovements = false
+            console.log('✅ [WebGazerManager] WebGazer reinitialized via begin() (calibration restored from IndexedDB, trackMouseMovements = false)')
           }
         } else {
           console.log('🔄 [WebGazerManager] WebGazer not ready, calling begin() to reinitialize...')
           await this.webgazer.begin()
-          console.log('✅ [WebGazerManager] WebGazer reinitialized (calibration restored from IndexedDB)')
+          // Ensure trackMouseMovements stays false after begin()
+          this.webgazer.params.trackMouseMovements = false
+          console.log('✅ [WebGazerManager] WebGazer reinitialized (calibration restored from IndexedDB, trackMouseMovements = false)')
         }
         
         // Wait a bit for video element and webcam to be ready
@@ -654,6 +667,12 @@ class WebGazerManager {
     // Ensure mouse tracking is disabled to prevent drift
     // The model should be frozen at calibration state
     this.disableMouseTracking()
+    
+    // Explicitly ensure trackMouseMovements is false
+    if (this.webgazer) {
+      this.webgazer.params.trackMouseMovements = false
+      console.log('🖱️ [WebGazerManager] Verified trackMouseMovements = false for tracking')
+    }
 
     // Ensure video visibility matches debug mode
     if (this.webgazer) {

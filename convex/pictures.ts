@@ -51,7 +51,7 @@ export const uploadPicture = mutation({
     if (args.ipAddress) {
       const rateLimit = await ctx.db
         .query("rateLimits")
-        .withIndex("by_ip", (q) => q.eq("ipAddress", args.ipAddress))
+        .withIndex("by_ip", (q) => q.eq("ipAddress", args.ipAddress!))
         .first();
 
       if (rateLimit && rateLimit.cooldownUntil > now) {
@@ -160,7 +160,7 @@ export const getImageUrl = query({
   args: {
     fileId: v.id("_storage"),
   },
-  returns: v.string(),
+  returns: v.union(v.string(), v.null()),
   handler: async (ctx, args) => {
     return await ctx.storage.getUrl(args.fileId);
   },

@@ -1,5 +1,6 @@
 import { useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
+import { Id } from '../../convex/_generated/dataModel'
 import { Link } from 'react-router-dom'
 import { 
   Eye, 
@@ -13,7 +14,7 @@ interface PictureCardProps {
   picture: {
     _id: string
     fileName: string
-    fileId: string
+    fileId: Id<"_storage">
     uploadedAt: number
     fileSize?: number
     experimentCount: number
