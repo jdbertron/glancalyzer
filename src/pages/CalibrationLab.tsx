@@ -675,12 +675,9 @@ export function CalibrationLab() {
           
           {/* Instructions overlay */}
           {isCalibrating && (
-            <div className="absolute top-20 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white px-6 py-3 rounded-lg shadow-lg text-center z-30 pointer-events-none">
-              <div className="text-lg font-semibold mb-1">
+            <div className="absolute top-32 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white px-6 py-3 rounded-lg shadow-lg text-center z-30 pointer-events-none">
+              <div className="text-lg font-semibold">
                 Click each red dot {CLICKS_PER_POINT} times (any order)
-              </div>
-              <div className="text-sm opacity-90">
-                {completedCalibrationPoints.size} of {calibrationPoints.length} points completed
               </div>
             </div>
           )}

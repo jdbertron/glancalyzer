@@ -225,6 +225,10 @@ class WebGazerManager {
       wg.params.trackMouseMovements = false;  // Disable mouse tracking
       wg.params.dataWindow = 30;  // Reduce click window if needed
       
+      // Control face overlay and feedback box based on debug mode
+      wg.params.showFaceOverlay = this.debugMode
+      wg.params.showFaceFeedbackBox = this.debugMode
+      
       // Clear storage right before begin() if we need to start fresh
       // This prevents WebGazer from loading old calibration data during begin()
       let disabledSaveDataAcrossSessions = false
@@ -275,6 +279,10 @@ class WebGazerManager {
       // Configure video and overlay visibility based on debug mode
       await wg.showVideoPreview(this.debugMode)
       await wg.showPredictionPoints(this.debugMode)
+      
+      // Update face overlay and feedback box visibility based on debug mode
+      wg.params.showFaceOverlay = this.debugMode
+      wg.params.showFaceFeedbackBox = this.debugMode
 
       // Wait for video element to be created
       await new Promise(resolve => setTimeout(resolve, 2000))
@@ -357,6 +365,10 @@ class WebGazerManager {
     if (this.webgazer) {
       await this.webgazer.showVideoPreview(this.debugMode)
       await this.webgazer.showPredictionPoints(this.debugMode)
+      
+      // Update face overlay and feedback box visibility based on debug mode
+      this.webgazer.params.showFaceOverlay = this.debugMode
+      this.webgazer.params.showFaceFeedbackBox = this.debugMode
     }
 
     // Improved calibration: collect data for the configured duration with better validation
@@ -393,6 +405,10 @@ class WebGazerManager {
     if (this.webgazer) {
       await this.webgazer.showVideoPreview(this.debugMode)
       await this.webgazer.showPredictionPoints(this.debugMode)
+      
+      // Update face overlay and feedback box visibility based on debug mode
+      this.webgazer.params.showFaceOverlay = this.debugMode
+      this.webgazer.params.showFaceFeedbackBox = this.debugMode
     }
 
     // Generate 9-point grid (3x3) + 1 center point (10 total)
@@ -610,6 +626,10 @@ class WebGazerManager {
         // Reconfigure video visibility
         await this.webgazer.showVideoPreview(this.debugMode)
         await this.webgazer.showPredictionPoints(this.debugMode)
+        
+        // Update face overlay and feedback box visibility based on debug mode
+        this.webgazer.params.showFaceOverlay = this.debugMode
+        this.webgazer.params.showFaceFeedbackBox = this.debugMode
       } catch (error) {
         console.error('❌ [WebGazerManager] Failed to resume WebGazer:', error)
         throw error
@@ -639,6 +659,10 @@ class WebGazerManager {
     if (this.webgazer) {
       await this.webgazer.showVideoPreview(this.debugMode)
       await this.webgazer.showPredictionPoints(this.debugMode)
+      
+      // Update face overlay and feedback box visibility based on debug mode
+      this.webgazer.params.showFaceOverlay = this.debugMode
+      this.webgazer.params.showFaceFeedbackBox = this.debugMode
       
       // Verify WebGazer is actually ready and tracking
       if (!this.webgazer.isReady()) {
@@ -714,6 +738,10 @@ class WebGazerManager {
     if (this.webgazer) {
       await this.webgazer.showVideoPreview(enabled)
       await this.webgazer.showPredictionPoints(enabled)
+      
+      // Control face overlay and feedback box based on debug mode
+      this.webgazer.params.showFaceOverlay = enabled
+      this.webgazer.params.showFaceFeedbackBox = enabled
     }
   }
 
@@ -968,6 +996,11 @@ class WebGazerManager {
         await this.webgazer.pause()
         await this.webgazer.showVideoPreview(false)
         await this.webgazer.showPredictionPoints(false)
+        
+        // Hide face overlay and feedback box
+        this.webgazer.params.showFaceOverlay = false
+        this.webgazer.params.showFaceFeedbackBox = false
+        
         this.isPaused = true
         console.log('⏸️ [WebGazerManager] WebGazer paused (calibration data preserved in localStorage)')
       } catch (error) {
@@ -1272,6 +1305,11 @@ class WebGazerManager {
         await this.webgazer.pause()
         await this.webgazer.showVideoPreview(false)
         await this.webgazer.showPredictionPoints(false)
+        
+        // Hide face overlay and feedback box
+        this.webgazer.params.showFaceOverlay = false
+        this.webgazer.params.showFaceFeedbackBox = false
+        
         await this.webgazer.end()
       } catch (error) {
         console.error('Error cleaning up WebGazer:', error)

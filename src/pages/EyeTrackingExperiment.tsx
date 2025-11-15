@@ -156,6 +156,10 @@ export function EyeTrackingExperiment() {
   useEffect(() => {
     if (pictureId && !isInitialized) {
       console.log('🚀 [React] Initializing WebGazer...')
+      
+      // Show loading toast while checking for calibration data
+      const loadingToast = toast.loading('Looking for calibration data...')
+      
       webgazerManager.initialize()
         .then(async () => {
           setIsInitialized(true)
@@ -170,6 +174,9 @@ export function EyeTrackingExperiment() {
           // Our lastCalibrationResult is in-memory only, so we check WebGazer's storage
           const hasExistingCalibration = await webgazerManager.hasExistingCalibration()
           const savedCalibration = webgazerManager.getLastCalibrationResult()
+          
+          // Dismiss loading toast
+          toast.dismiss(loadingToast)
           
           if (hasExistingCalibration) {
             // Automatically skip calibration if valid calibration exists
@@ -193,14 +200,15 @@ export function EyeTrackingExperiment() {
             
             setIsCalibrated(true)
             console.log('✅ [React] Existing calibration detected in WebGazer IndexedDB')
-            toast.success('Existing calibration found and loaded! You can start tracking now, or recalibrate if needed.')
+            // Removed toast - less distracting for eye tracking app
           } else {
             console.log('ℹ️ [React] No existing calibration found - user will need to calibrate')
-            toast.success('WebGazer initialized! Click "Start Calibration" to begin.')
+            // Removed toast - less distracting for eye tracking app
           }
         })
         .catch((error) => {
           console.error('❌ [React] WebGazer initialization failed:', error)
+          toast.dismiss(loadingToast)
           toast.error('Failed to initialize WebGazer. Please refresh the page.')
         })
     }
@@ -342,10 +350,7 @@ export function EyeTrackingExperiment() {
 
     // Prevent clicking the same point twice in a row - user must move to a different point first
     if (lastClickedPointIndex === pointIndex) {
-      toast.error('Please click a different dot first. Move your eyes to another location before clicking again.', {
-        duration: 2000,
-        icon: '👁️',
-      })
+      // Removed toast - less distracting for eye tracking app
       return
     }
 
@@ -935,16 +940,6 @@ export function EyeTrackingExperiment() {
                           </div>
                         )
                       })}
-                      
-                      {/* Instructions overlay */}
-                      <div className="absolute top-20 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white px-6 py-3 rounded-lg shadow-lg text-center z-30 pointer-events-none">
-                        <div className="text-lg font-semibold mb-1">
-                          Click each red dot {EYE_TRACKING_EXPERIMENT.CLICKS_PER_CALIBRATION_POINT} times (any order)
-                        </div>
-                        <div className="text-sm opacity-90">
-                          {completedCalibrationPoints.size} of {calibrationPoints.length} points completed
-                        </div>
-                      </div>
                     </div>
                   )}
 
@@ -1057,7 +1052,7 @@ export function EyeTrackingExperiment() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="font-medium text-gray-900 text-xs">
-                        1. Initialize WebGazer
+                        Initialize WebGazer
                       </h3>
                       <p className="text-xs text-gray-600">
                         Setting up eye tracking system...
@@ -1075,7 +1070,7 @@ export function EyeTrackingExperiment() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="font-medium text-gray-900 text-xs">
-                        2. Calibrate System
+                        Calibrate System
                       </h3>
                       {isCalibrating ? (
                         <>
@@ -1134,7 +1129,7 @@ export function EyeTrackingExperiment() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="font-medium text-gray-900 text-xs">
-                        3. Start {EYE_TRACKING_EXPERIMENT.DURATION_SECONDS}-Second Session
+                        Start {EYE_TRACKING_EXPERIMENT.DURATION_SECONDS}-Second Session
                       </h3>
                       <p className="text-xs text-gray-600">
                         Ready to start - look at the image naturally for {EYE_TRACKING_EXPERIMENT.DURATION_SECONDS} seconds
