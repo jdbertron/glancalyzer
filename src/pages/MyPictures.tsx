@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery } from 'convex/react'
+import { useQuery, useMutation } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { useAuth } from '../hooks/useAuth'
 import { 
@@ -8,14 +8,81 @@ import {
 } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { PictureCard } from '../components/PictureCard'
+import { LoadingSpinner } from '../components/LoadingSpinner'
 import toast from 'react-hot-toast'
 
 export function MyPictures() {
   const { user, userId } = useAuth()
   const navigate = useNavigate()
+  const [deletingPictureId, setDeletingPictureId] = useState<string | null>(null)
 
-  // Get user's pictures
-  const pictures = useQuery(api.pictures.getUserPictures, userId ? { userId } : 'skip')
+  // Get user's pictures from direct uploads
+  const userPictures = useQuery(api.pictures.getUserPictures, userId ? { userId } : 'skip')
+  
+  // Get pictures from experiments
+  // IMPORTANT: Deploy to Convex Cloud with `npx convex deploy` to make this function available
+  const picturesFromExperiments = useQuery(
+    api.pictures.getPicturesFromExperiments, 
+    userId ? { userId } : 'skip'
+  )
+
+  // Delete picture mutation
+  const deletePicture = useMutation(api.pictures.deletePicture)
+
+  // Combine both sources: direct user pictures + pictures from experiments
+  // Deduplicate by _id, preferring direct user pictures (they have more complete data)
+  const allPictures = (() => {
+    if (userPictures === undefined) return []
+    const userPics = userPictures || []
+    const expPics = (picturesFromExperiments !== undefined && picturesFromExperiments !== null) ? picturesFromExperiments : []
+    
+    // Start with user pictures, then add experiment pictures that aren't already included
+    const combined = [...userPics]
+    const userPicIds = new Set(userPics.map(p => p._id))
+    
+    expPics.forEach(expPic => {
+      if (!userPicIds.has(expPic._id)) {
+        combined.push(expPic)
+      }
+    })
+    
+    // Sort by uploadedAt descending (newest first)
+    return combined.sort((a, b) => b.uploadedAt - a.uploadedAt)
+  })()
+
+  const handleDelete = async (pictureId: string) => {
+    // Find the picture to get its name and experiment count
+    const picture = allPictures.find(p => p._id === pictureId)
+    if (!picture) return
+
+    // Confirm deletion
+    const confirmMessage = picture.experimentCount > 0
+      ? `Are you sure you want to delete "${picture.fileName}"? This will also delete ${picture.experimentCount} associated experiment${picture.experimentCount !== 1 ? 's' : ''}. This action cannot be undone.`
+      : `Are you sure you want to delete "${picture.fileName}"? This action cannot be undone.`
+
+    if (!window.confirm(confirmMessage)) {
+      return
+    }
+
+    setDeletingPictureId(pictureId)
+    try {
+      const result = await deletePicture({
+        pictureId: pictureId as any,
+        userId: userId || undefined,
+      })
+
+      if (result.success) {
+        toast.success('Picture deleted successfully')
+      } else {
+        toast.error(result.message || 'Failed to delete picture')
+      }
+    } catch (error) {
+      console.error('Delete picture error:', error)
+      toast.error('Failed to delete picture')
+    } finally {
+      setDeletingPictureId(null)
+    }
+  }
 
   if (!user) {
     return (
@@ -32,14 +99,13 @@ export function MyPictures() {
     )
   }
 
-  if (pictures === undefined) {
+  if (userPictures === undefined) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+        <LoadingSpinner size="lg" />
       </div>
     )
   }
-
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -52,7 +118,7 @@ export function MyPictures() {
                 My Pictures
               </h1>
               <p className="text-gray-600 mt-1">
-                {pictures.length} picture{pictures.length !== 1 ? 's' : ''} uploaded
+                {allPictures.length} picture{allPictures.length !== 1 ? 's' : ''} uploaded
               </p>
             </div>
             <Link
@@ -67,7 +133,7 @@ export function MyPictures() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {pictures.length === 0 ? (
+        {allPictures.length === 0 ? (
           <div className="text-center py-12">
             <ImageIcon className="h-16 w-16 text-gray-400 mx-auto mb-4" />
             <h3 className="text-xl font-semibold text-gray-900 mb-2">
@@ -82,13 +148,15 @@ export function MyPictures() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {pictures.map((picture) => (
+            {allPictures.map((picture) => (
               <PictureCard
                 key={picture._id}
                 picture={picture}
                 onAnalyzeFocus={(pictureId) => {
                   navigate(`/eye-tracking-experiment?pictureId=${pictureId}`)
                 }}
+                onDelete={handleDelete}
+                isDeleting={deletingPictureId === picture._id}
               />
             ))}
           </div>

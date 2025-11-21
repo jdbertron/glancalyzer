@@ -172,6 +172,29 @@ export const getUserExperiments = query({
       ),
       createdAt: v.number(),
       completedAt: v.optional(v.number()),
+      eyeTrackingData: v.optional(v.object({
+        gazePoints: v.array(v.object({
+          x: v.number(),
+          y: v.number(),
+          timestamp: v.number(),
+          confidence: v.optional(v.number())
+        })),
+        heatmapData: v.optional(v.any()),
+        fixationPoints: v.optional(v.array(v.object({
+          x: v.number(),
+          y: v.number(),
+          duration: v.number(),
+          startTime: v.number()
+        }))),
+        scanPath: v.optional(v.array(v.object({
+          x: v.number(),
+          y: v.number(),
+          timestamp: v.number(),
+          confidence: v.optional(v.number())
+        }))),
+        sessionDuration: v.optional(v.number()),
+        calibrationData: v.optional(v.any())
+      })),
       picture: v.optional(
         v.object({
           _id: v.id("pictures"),
@@ -189,11 +212,21 @@ export const getUserExperiments = query({
       .collect();
 
     // Get picture details for each experiment
+    // Explicitly construct return objects to match validator (exclude eyeTrackingData for this query)
     const experimentsWithPictures = await Promise.all(
       experiments.map(async (experiment) => {
         const picture = await ctx.db.get(experiment.pictureId);
         return {
-          ...experiment,
+          _id: experiment._id,
+          _creationTime: experiment._creationTime,
+          pictureId: experiment.pictureId,
+          experimentType: experiment.experimentType,
+          parameters: experiment.parameters,
+          results: experiment.results,
+          status: experiment.status,
+          createdAt: experiment.createdAt,
+          completedAt: experiment.completedAt,
+          eyeTrackingData: experiment.eyeTrackingData, // Include it now that validator allows it
           picture: picture ? {
             _id: picture._id,
             fileName: picture.fileName,
@@ -332,6 +365,29 @@ export const getExperiment = query({
       experimentType: v.string(),
       parameters: v.optional(v.any()),
       results: v.optional(v.any()),
+      eyeTrackingData: v.optional(v.object({
+        gazePoints: v.array(v.object({
+          x: v.number(),
+          y: v.number(),
+          timestamp: v.number(),
+          confidence: v.optional(v.number())
+        })),
+        heatmapData: v.optional(v.any()),
+        fixationPoints: v.optional(v.array(v.object({
+          x: v.number(),
+          y: v.number(),
+          duration: v.number(),
+          startTime: v.number()
+        }))),
+        scanPath: v.optional(v.array(v.object({
+          x: v.number(),
+          y: v.number(),
+          timestamp: v.number(),
+          confidence: v.optional(v.number())
+        }))),
+        sessionDuration: v.optional(v.number()),
+        calibrationData: v.optional(v.any())
+      })),
       status: v.union(
         v.literal("pending"),
         v.literal("processing"),
@@ -354,7 +410,20 @@ export const getExperiment = query({
       return null;
     }
 
-    return experiment;
+    // Explicitly construct return object to match validator
+    return {
+      _id: experiment._id,
+      _creationTime: experiment._creationTime,
+      pictureId: experiment.pictureId,
+      userId: experiment.userId,
+      experimentType: experiment.experimentType,
+      parameters: experiment.parameters,
+      results: experiment.results,
+      eyeTrackingData: experiment.eyeTrackingData, // Include it now that validator allows it
+      status: experiment.status,
+      createdAt: experiment.createdAt,
+      completedAt: experiment.completedAt,
+    };
   },
 });
 

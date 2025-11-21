@@ -143,6 +143,58 @@ export const getUserPictures = query({
   },
 });
 
+// Get pictures associated with user's experiments (even if userId doesn't match)
+export const getPicturesFromExperiments = query({
+  args: {
+    userId: v.id("users"),
+  },
+  returns: v.array(
+    v.object({
+      _id: v.id("pictures"),
+      fileName: v.string(),
+      fileId: v.id("_storage"),
+      uploadedAt: v.float64(),
+      fileSize: v.optional(v.float64()),
+      experimentCount: v.number(),
+    })
+  ),
+  handler: async (ctx, args) => {
+    // Get all experiments for this user
+    const experiments = await ctx.db
+      .query("experiments")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .collect();
+
+    // Get unique picture IDs from experiments
+    const pictureIds = Array.from(new Set(experiments.map(exp => exp.pictureId)));
+
+    // Fetch all pictures
+    const pictures = await Promise.all(
+      pictureIds.map(async (pictureId) => {
+        const picture = await ctx.db.get(pictureId);
+        if (!picture || picture.isExpired === true) return null;
+        
+        // Count experiments for this picture
+        const pictureExperiments = experiments.filter(exp => exp.pictureId === pictureId);
+        
+        return {
+          _id: picture._id,
+          fileName: picture.fileName,
+          fileId: picture.fileId,
+          uploadedAt: picture.uploadedAt,
+          fileSize: picture.fileSize,
+          experimentCount: pictureExperiments.length,
+        };
+      })
+    );
+
+    // Filter out nulls and sort by uploadedAt descending
+    return pictures
+      .filter((p): p is NonNullable<typeof p> => p !== null)
+      .sort((a, b) => b.uploadedAt - a.uploadedAt);
+  },
+});
+
 // Get picture details
 export const getPicture = query({
   args: {

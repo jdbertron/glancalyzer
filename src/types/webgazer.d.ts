@@ -22,6 +22,7 @@ declare module 'webgazer' {
     mirrorVideo: boolean
     showFaceOverlay: boolean
     showFaceFeedbackBox: boolean
+    frameSkipRate: number
     showGazeDot: boolean
     camConstraints: any
     dataTimestep: number

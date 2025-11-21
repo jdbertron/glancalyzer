@@ -196,9 +196,15 @@ class WebGazerManager {
             // }
             // ============================================================================
             
+            // IMPORTANT: data.x and data.y are raw WebGazer coordinates (Kalman-filtered but not clamped)
+            // These coordinates are typically viewport-relative but CAN exceed viewport bounds due to:
+            // - Calibration inaccuracy
+            // - User looking outside viewport
+            // - Model extrapolation beyond calibration range
+            // They will be mapped/clamped later in mapWebgazerToViewport() and mapToImageCoordinates()
             const gazePoint: GazePoint = {
-              x: data.x, // Using WebGazer's Kalman-filtered coordinates directly
-              y: data.y,
+              x: data.x, // Raw WebGazer coordinate (may exceed viewport bounds)
+              y: data.y, // Raw WebGazer coordinate (may exceed viewport bounds)
               timestamp: Date.now(),
               confidence: data.confidence || 0.5
             }
@@ -214,7 +220,19 @@ class WebGazerManager {
             // Collect experiment data if tracking
             if (this.isTracking) {
               this.experimentData.push(gazePoint)
-              console.log(`👁️ [WebGazerManager] Gaze point #${this.experimentData.length}: (${Math.round(data.x)}, ${Math.round(data.y)})`)
+              
+              // Enhanced logging: show raw WebGazer coordinates with viewport context
+              const viewportWidth = window.innerWidth
+              const viewportHeight = window.innerHeight
+              const isWithinViewport = data.x >= 0 && data.x <= viewportWidth && 
+                                      data.y >= 0 && data.y <= viewportHeight
+              const outOfBounds = !isWithinViewport
+              
+              if (outOfBounds) {
+                console.warn(`👁️ [WebGazerManager] Gaze point #${this.experimentData.length} OUT OF BOUNDS: (${Math.round(data.x)}, ${Math.round(data.y)}) | Viewport: ${viewportWidth}x${viewportHeight} | Raw WebGazer coordinates may exceed viewport bounds`)
+              } else {
+                console.log(`👁️ [WebGazerManager] Gaze point #${this.experimentData.length}: (${Math.round(data.x)}, ${Math.round(data.y)})`)
+              }
             }
 
             // Notify all listeners with Kalman-filtered data
@@ -230,6 +248,7 @@ class WebGazerManager {
       // Control face overlay and feedback box based on debug mode
       wg.params.showFaceOverlay = this.debugMode
       wg.params.showFaceFeedbackBox = this.debugMode
+      wg.params.frameSkipRate = 2; // For 30fps (every other frame)
       
       // Clear storage right before begin() if we need to start fresh
       // This prevents WebGazer from loading old calibration data during begin()
@@ -310,13 +329,26 @@ class WebGazerManager {
       this.webgazer = wg
       this.isInitialized = true
       
-      // Wait a bit for WebGazer to load calibration data from localStorage
-      await new Promise(resolve => setTimeout(resolve, 500))
+      // Wait a bit for WebGazer to load calibration data from IndexedDB
+      // WebGazer loads calibration asynchronously, so we wait longer to ensure it's loaded
+      await new Promise(resolve => setTimeout(resolve, 1500))
       
-      // Check if WebGazer has existing calibration data from localStorage
+      // Check if WebGazer has existing calibration data from IndexedDB
       const hasExistingCalibration = await this.checkForExistingCalibration()
       if (hasExistingCalibration) {
         console.log('✅ [WebGazerManager] Found existing calibration data from previous session')
+        
+        // CRITICAL: Verify calibration coefficients are actually loaded after initialization
+        // This ensures the experiment screen uses the same coefficients as the calibration screen
+        const hasCoefficients = this.verifyCalibrationCoefficients()
+        if (hasCoefficients) {
+          console.log('✅ [WebGazerManager] Calibration coefficients successfully loaded from IndexedDB')
+          console.log('   The experiment screen will use the same calibration coefficients as the calibration screen.')
+        } else {
+          console.warn('⚠️ [WebGazerManager] Calibration data exists in IndexedDB but coefficients not loaded yet.')
+          console.warn('   This may be a timing issue - WebGazer loads calibration asynchronously.')
+          console.warn('   Coefficients should be available when startTracking() is called.')
+        }
       } else {
         console.log('ℹ️ [WebGazerManager] No existing calibration data found')
       }
@@ -578,6 +610,39 @@ class WebGazerManager {
     // Store calibration result for reuse after pause/resume
     this.lastCalibrationResult = result
 
+    // CRITICAL: Log the calibration coefficients that were created
+    // This allows us to verify the same coefficients are used in the experiment screen
+    if (this.webgazer) {
+      const wgAny = this.webgazer as any
+      let coefficientInfo: any = null
+      
+      if (wgAny.ridge?.regression?.beta && Array.isArray(wgAny.ridge.regression.beta) && wgAny.ridge.regression.beta.length > 0) {
+        coefficientInfo = {
+          source: 'ridge.regression.beta',
+          count: wgAny.ridge.regression.beta.length,
+          firstFew: wgAny.ridge.regression.beta.slice(0, 5),
+          lastFew: wgAny.ridge.regression.beta.slice(-5),
+          hash: JSON.stringify(wgAny.ridge.regression.beta).substring(0, 50) // First 50 chars for comparison
+        }
+      } else if (wgAny.ridge?.beta && Array.isArray(wgAny.ridge.beta) && wgAny.ridge.beta.length > 0) {
+        coefficientInfo = {
+          source: 'ridge.beta',
+          count: wgAny.ridge.beta.length,
+          firstFew: wgAny.ridge.beta.slice(0, 5),
+          lastFew: wgAny.ridge.beta.slice(-5),
+          hash: JSON.stringify(wgAny.ridge.beta).substring(0, 50)
+        }
+      }
+      
+      if (coefficientInfo) {
+        console.log('✅ [WebGazerManager] Calibration coefficients CREATED during calibration:', coefficientInfo)
+        console.log('   These coefficients are saved to IndexedDB and should be loaded in the experiment screen.')
+      } else {
+        console.warn('⚠️ [WebGazerManager] No calibration coefficients found after calibration!')
+        console.warn('   This may indicate the calibration did not properly train the regression model.')
+      }
+    }
+
     // Log calibration domain analysis
     const calDomain = this.getCalibrationDomain()
     if (calDomain) {
@@ -632,7 +697,18 @@ class WebGazerManager {
         }
         
         // Wait a bit for video element and webcam to be ready
-        await new Promise(resolve => setTimeout(resolve, 1000))
+        // Also wait for WebGazer to load calibration from IndexedDB
+        await new Promise(resolve => setTimeout(resolve, 1500))
+        
+        // CRITICAL: Verify calibration coefficients are loaded after resume/begin
+        // This ensures we're using the same coefficients created during calibration
+        const hasCoefficients = this.verifyCalibrationCoefficients()
+        if (hasCoefficients) {
+          console.log('✅ [WebGazerManager] Calibration coefficients verified after resume/begin')
+        } else {
+          console.warn('⚠️ [WebGazerManager] Calibration coefficients not found after resume/begin')
+          console.warn('   This may indicate calibration was not properly loaded from IndexedDB.')
+        }
         
         this.isPaused = false
         
@@ -650,6 +726,51 @@ class WebGazerManager {
     }
   }
 
+  // Verify calibration coefficients are loaded
+  private verifyCalibrationCoefficients(): boolean {
+    if (!this.webgazer) return false
+    
+    const wgAny = this.webgazer as any
+    let hasCoefficients = false
+    let coefficientInfo: any = {}
+    
+    // Check for regression model coefficients (beta array)
+    if (wgAny.ridge?.regression?.beta && Array.isArray(wgAny.ridge.regression.beta) && wgAny.ridge.regression.beta.length > 0) {
+      hasCoefficients = true
+      coefficientInfo = {
+        source: 'ridge.regression.beta',
+        count: wgAny.ridge.regression.beta.length,
+        firstFew: wgAny.ridge.regression.beta.slice(0, 5),
+        lastFew: wgAny.ridge.regression.beta.slice(-5)
+      }
+    } else if (wgAny.ridge?.beta && Array.isArray(wgAny.ridge.beta) && wgAny.ridge.beta.length > 0) {
+      hasCoefficients = true
+      coefficientInfo = {
+        source: 'ridge.beta',
+        count: wgAny.ridge.beta.length,
+        firstFew: wgAny.ridge.beta.slice(0, 5),
+        lastFew: wgAny.ridge.beta.slice(-5)
+      }
+    } else if (wgAny.regression?.beta && Array.isArray(wgAny.regression.beta) && wgAny.regression.beta.length > 0) {
+      hasCoefficients = true
+      coefficientInfo = {
+        source: 'regression.beta',
+        count: wgAny.regression.beta.length,
+        firstFew: wgAny.regression.beta.slice(0, 5),
+        lastFew: wgAny.regression.beta.slice(-5)
+      }
+    }
+    
+    if (hasCoefficients) {
+      console.log('✅ [WebGazerManager] Calibration coefficients verified:', coefficientInfo)
+    } else {
+      console.warn('⚠️ [WebGazerManager] No calibration coefficients found in regression model!')
+      console.warn('   This means tracking will use an uncalibrated model.')
+    }
+    
+    return hasCoefficients
+  }
+
   // Start tracking
   async startTracking(): Promise<void> {
     if (!this.isInitialized) {
@@ -660,6 +781,16 @@ class WebGazerManager {
     await this.resumeIfPaused()
 
     console.log('🎯 [WebGazerManager] Starting tracking...')
+    
+    // CRITICAL: Verify calibration coefficients are loaded before tracking
+    // This ensures we're using the same coefficients created during calibration
+    const hasCoefficients = this.verifyCalibrationCoefficients()
+    if (!hasCoefficients) {
+      console.error('❌ [WebGazerManager] WARNING: Starting tracking without calibration coefficients!')
+      console.error('   The experiment screen may not be using the same calibration as the calibration screen.')
+      console.error('   This could result in inaccurate gaze tracking.')
+    }
+    
     this.isTracking = true
     this.experimentData = []
     // Note: Custom smoothing is disabled - using WebGazer's Kalman filter only

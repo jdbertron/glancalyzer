@@ -62,21 +62,37 @@ export function EyeTrackingResults({
     const imageRect = imageRef.current.getBoundingClientRect()
     const containerRect = container.getBoundingClientRect()
     
-    // Calculate position relative to container (accounting for any centering)
+    // Calculate position relative to container (accounting for any centering from object-fit: contain)
+    // When object-fit: contain is used, the image might be centered within its container
+    // We need to use the actual displayed image bounds, not just offsetWidth/Height
+    const displayedImageWidth = imageRect.width
+    const displayedImageHeight = imageRect.height
+    
+    // Calculate the actual position of the displayed image within the container
+    // This accounts for centering when object-fit: contain is used
     const canvasLeft = imageRect.left - containerRect.left
     const canvasTop = imageRect.top - containerRect.top
     
-    // Position and size canvas to match image exactly
+    // Position and size canvas to match the ACTUAL displayed image size (from getBoundingClientRect)
+    // This ensures perfect alignment even with object-fit: contain
     canvasRef.current.style.left = `${canvasLeft}px`
     canvasRef.current.style.top = `${canvasTop}px`
-    canvasRef.current.style.width = `${imageWidth}px`
-    canvasRef.current.style.height = `${imageHeight}px`
+    canvasRef.current.style.width = `${displayedImageWidth}px`
+    canvasRef.current.style.height = `${displayedImageHeight}px`
     
     // Set canvas internal resolution to match displayed image size (1:1 pixel ratio)
-    if (canvasRef.current.width !== imageWidth || canvasRef.current.height !== imageHeight) {
-      canvasRef.current.width = imageWidth
-      canvasRef.current.height = imageHeight
+    // Use displayed dimensions, not offset dimensions, to account for object-fit scaling
+    if (canvasRef.current.width !== displayedImageWidth || canvasRef.current.height !== displayedImageHeight) {
+      canvasRef.current.width = displayedImageWidth
+      canvasRef.current.height = displayedImageHeight
     }
+    
+    console.log('📐 [Canvas] Position updated:', {
+      imageOffset: { width: imageWidth, height: imageHeight },
+      imageDisplayed: { width: displayedImageWidth, height: displayedImageHeight },
+      canvasPosition: { left: canvasLeft, top: canvasTop },
+      canvasSize: { width: displayedImageWidth, height: displayedImageHeight }
+    })
   }, [])
 
 
@@ -395,6 +411,89 @@ export function EyeTrackingResults({
     return () => window.removeEventListener('resize', handleResize)
   }, [imageLoaded, activeTab, updateCanvasPosition, drawHeatmap, drawScanPath, drawFixations])
 
+  // Calculate coordinate analysis
+  const coordinateAnalysis = (() => {
+    if (!data.gazePoints || data.gazePoints.length === 0) {
+      return null
+    }
+
+    const xValues = data.gazePoints.map(p => p.x)
+    const yValues = data.gazePoints.map(p => p.y)
+    
+    const minX = Math.min(...xValues)
+    const maxX = Math.max(...xValues)
+    const minY = Math.min(...yValues)
+    const maxY = Math.max(...yValues)
+    
+    // Image boundaries (gaze points are in natural image coordinates)
+    const imageMinX = 0
+    const imageMaxX = imageWidth
+    const imageMinY = 0
+    const imageMaxY = imageHeight
+    
+    // Calculate how far outside the image bounds the gaze points are
+    const xOutsideLeft = Math.min(0, minX - imageMinX)
+    const xOutsideRight = Math.max(0, maxX - imageMaxX)
+    const yOutsideTop = Math.min(0, minY - imageMinY)
+    const yOutsideBottom = Math.max(0, maxY - imageMaxY)
+    
+    // Calculate percentage of points outside bounds
+    const pointsOutsideX = data.gazePoints.filter(p => p.x < imageMinX || p.x > imageMaxX).length
+    const pointsOutsideY = data.gazePoints.filter(p => p.y < imageMinY || p.y > imageMaxY).length
+    const pointsOutsideBoth = data.gazePoints.filter(p => 
+      p.x < imageMinX || p.x > imageMaxX || p.y < imageMinY || p.y > imageMaxY
+    ).length
+    
+    const analysis = {
+      gazeRange: {
+        minX,
+        maxX,
+        minY,
+        maxY
+      },
+      imageBounds: {
+        minX: imageMinX,
+        maxX: imageMaxX,
+        minY: imageMinY,
+        maxY: imageMaxY
+      },
+      outsideBounds: {
+        xLeft: xOutsideLeft,
+        xRight: xOutsideRight,
+        yTop: yOutsideTop,
+        yBottom: yOutsideBottom
+      },
+      pointsOutside: {
+        x: pointsOutsideX,
+        y: pointsOutsideY,
+        both: pointsOutsideBoth,
+        percentageX: (pointsOutsideX / data.gazePoints.length) * 100,
+        percentageY: (pointsOutsideY / data.gazePoints.length) * 100,
+        percentageBoth: (pointsOutsideBoth / data.gazePoints.length) * 100
+      }
+    }
+    
+    // Log analysis to console for debugging
+    console.log('📊 [Coordinate Analysis] Gaze vs Image Bounds:', {
+      imageDimensions: { width: imageWidth, height: imageHeight },
+      gazeRange: analysis.gazeRange,
+      imageBounds: analysis.imageBounds,
+      outsideBounds: analysis.outsideBounds,
+      pointsOutside: analysis.pointsOutside,
+      summary: {
+        xRange: `${analysis.gazeRange.minX.toFixed(1)} to ${analysis.gazeRange.maxX.toFixed(1)} (image: 0 to ${imageWidth})`,
+        yRange: `${analysis.gazeRange.minY.toFixed(1)} to ${analysis.gazeRange.maxY.toFixed(1)} (image: 0 to ${imageHeight})`,
+        xOutside: analysis.outsideBounds.xLeft < 0 ? `${Math.abs(analysis.outsideBounds.xLeft).toFixed(1)}px left` : 
+                  analysis.outsideBounds.xRight > 0 ? `${analysis.outsideBounds.xRight.toFixed(1)}px right` : 'within bounds',
+        yOutside: analysis.outsideBounds.yTop < 0 ? `${Math.abs(analysis.outsideBounds.yTop).toFixed(1)}px top` :
+                  analysis.outsideBounds.yBottom > 0 ? `${analysis.outsideBounds.yBottom.toFixed(1)}px bottom` : 'within bounds',
+        percentageOutside: `${analysis.pointsOutside.percentageBoth.toFixed(1)}%`
+      }
+    })
+    
+    return analysis
+  })()
+
   // Calculate statistics
   const stats = {
     totalGazePoints: data.gazePoints?.length || 0,
@@ -528,6 +627,148 @@ export function EyeTrackingResults({
                     </span>
                   </div>
                 </div>
+
+                {/* Coordinate Analysis Section */}
+                {coordinateAnalysis && (
+                  <div className="mt-6 p-4 bg-white border-2 rounded-lg">
+                    <h3 className="text-lg font-semibold mb-4 text-gray-800">Coordinate Analysis</h3>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Comparing gaze point coordinates to image boundaries (natural image dimensions)
+                    </p>
+                    
+                    <div className="space-y-4">
+                      {/* X Dimension Analysis */}
+                      <div className="p-4 bg-blue-50 rounded-lg">
+                        <h4 className="font-semibold text-blue-800 mb-2">X Dimension (Width)</h4>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-gray-700">Gaze Range:</span>
+                            <span className="font-mono font-medium">
+                              {coordinateAnalysis.gazeRange.minX.toFixed(1)} to {coordinateAnalysis.gazeRange.maxX.toFixed(1)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-700">Image Bounds:</span>
+                            <span className="font-mono font-medium">
+                              {coordinateAnalysis.imageBounds.minX} to {coordinateAnalysis.imageBounds.maxX}
+                            </span>
+                          </div>
+                          {coordinateAnalysis.outsideBounds.xLeft < 0 && (
+                            <div className="flex justify-between text-red-600">
+                              <span>Outside Left:</span>
+                              <span className="font-mono font-semibold">
+                                {Math.abs(coordinateAnalysis.outsideBounds.xLeft).toFixed(1)} px
+                              </span>
+                            </div>
+                          )}
+                          {coordinateAnalysis.outsideBounds.xRight > 0 && (
+                            <div className="flex justify-between text-red-600">
+                              <span>Outside Right:</span>
+                              <span className="font-mono font-semibold">
+                                {coordinateAnalysis.outsideBounds.xRight.toFixed(1)} px
+                              </span>
+                            </div>
+                          )}
+                          <div className="flex justify-between">
+                            <span className="text-gray-700">Points Outside X Bounds:</span>
+                            <span className={`font-semibold ${
+                              coordinateAnalysis.pointsOutside.percentageX > 10 ? 'text-red-600' : 
+                              coordinateAnalysis.pointsOutside.percentageX > 5 ? 'text-orange-600' : 
+                              'text-green-600'
+                            }`}>
+                              {coordinateAnalysis.pointsOutside.x} ({coordinateAnalysis.pointsOutside.percentageX.toFixed(1)}%)
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Y Dimension Analysis */}
+                      <div className="p-4 bg-green-50 rounded-lg">
+                        <h4 className="font-semibold text-green-800 mb-2">Y Dimension (Height)</h4>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-gray-700">Gaze Range:</span>
+                            <span className="font-mono font-medium">
+                              {coordinateAnalysis.gazeRange.minY.toFixed(1)} to {coordinateAnalysis.gazeRange.maxY.toFixed(1)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-700">Image Bounds:</span>
+                            <span className="font-mono font-medium">
+                              {coordinateAnalysis.imageBounds.minY} to {coordinateAnalysis.imageBounds.maxY}
+                            </span>
+                          </div>
+                          {coordinateAnalysis.outsideBounds.yTop < 0 && (
+                            <div className="flex justify-between text-red-600">
+                              <span>Outside Top:</span>
+                              <span className="font-mono font-semibold">
+                                {Math.abs(coordinateAnalysis.outsideBounds.yTop).toFixed(1)} px
+                              </span>
+                            </div>
+                          )}
+                          {coordinateAnalysis.outsideBounds.yBottom > 0 && (
+                            <div className="flex justify-between text-red-600">
+                              <span>Outside Bottom:</span>
+                              <span className="font-mono font-semibold">
+                                {coordinateAnalysis.outsideBounds.yBottom.toFixed(1)} px
+                              </span>
+                            </div>
+                          )}
+                          <div className="flex justify-between">
+                            <span className="text-gray-700">Points Outside Y Bounds:</span>
+                            <span className={`font-semibold ${
+                              coordinateAnalysis.pointsOutside.percentageY > 10 ? 'text-red-600' : 
+                              coordinateAnalysis.pointsOutside.percentageY > 5 ? 'text-orange-600' : 
+                              'text-green-600'
+                            }`}>
+                              {coordinateAnalysis.pointsOutside.y} ({coordinateAnalysis.pointsOutside.percentageY.toFixed(1)}%)
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Summary */}
+                      <div className={`p-4 rounded-lg ${
+                        coordinateAnalysis.pointsOutside.percentageBoth > 10 ? 'bg-red-50 border-2 border-red-200' :
+                        coordinateAnalysis.pointsOutside.percentageBoth > 5 ? 'bg-orange-50 border-2 border-orange-200' :
+                        'bg-green-50 border-2 border-green-200'
+                      }`}>
+                        <h4 className={`font-semibold mb-2 ${
+                          coordinateAnalysis.pointsOutside.percentageBoth > 10 ? 'text-red-800' :
+                          coordinateAnalysis.pointsOutside.percentageBoth > 5 ? 'text-orange-800' :
+                          'text-green-800'
+                        }`}>
+                          Summary
+                        </h4>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-gray-700">Total Points Outside Image:</span>
+                            <span className={`font-semibold ${
+                              coordinateAnalysis.pointsOutside.percentageBoth > 10 ? 'text-red-600' : 
+                              coordinateAnalysis.pointsOutside.percentageBoth > 5 ? 'text-orange-600' : 
+                              'text-green-600'
+                            }`}>
+                              {coordinateAnalysis.pointsOutside.both} ({coordinateAnalysis.pointsOutside.percentageBoth.toFixed(1)}%)
+                            </span>
+                          </div>
+                          {coordinateAnalysis.pointsOutside.percentageBoth > 5 && (
+                            <div className="mt-2 p-2 bg-white rounded text-xs">
+                              <p className="text-gray-700">
+                                <strong>Note:</strong> A significant portion of gaze points are outside the image frame. 
+                                This may indicate:
+                              </p>
+                              <ul className="list-disc list-inside mt-1 text-gray-600">
+                                <li>Calibration offset or drift</li>
+                                <li>Image position changed during tracking</li>
+                                <li>Coordinate mapping issue</li>
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>

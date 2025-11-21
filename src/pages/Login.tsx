@@ -14,8 +14,26 @@ export function Login() {
     setIsLoading(true)
 
     try {
-      await login(email)
-      navigate('/verify-email')
+      const result = await login(email)
+      // Check if user is verified by checking if we got a login success vs registration
+      // If user was already verified, navigate to dashboard
+      // Otherwise navigate to verify-email
+      const storedUserId = localStorage.getItem('userId')
+      if (storedUserId) {
+        // Give it a moment for the user query to update, then check
+        setTimeout(() => {
+          // If we successfully logged in, go to dashboard
+          // If we registered, go to verify-email
+          // The message will tell us which one happened
+          if (result.message === 'Login successful') {
+            navigate('/dashboard')
+          } else {
+            navigate('/verify-email')
+          }
+        }, 100)
+      } else {
+        navigate('/verify-email')
+      }
     } catch (error) {
       // Error is handled in the hook
     } finally {

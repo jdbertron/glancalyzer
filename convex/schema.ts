@@ -24,7 +24,9 @@ export default defineSchema({
     token: v.string(),
     expiresAt: v.number(),
     used: v.boolean(),
-  }).index("by_token", ["token"]),
+  })
+    .index("by_token", ["token"])
+    .index("by_userId", ["userId"]),
 
   // Pictures uploaded by users
   pictures: defineTable({

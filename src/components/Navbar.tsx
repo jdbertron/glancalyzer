@@ -60,13 +60,6 @@ export function Navbar({ user }: NavbarProps) {
                   <span>My Pictures</span>
                 </Link>
                 <Link
-                  to="/experiments"
-                  className="btn btn-outline btn-sm flex items-center space-x-2"
-                >
-                  <BarChart3 className="h-4 w-4" />
-                  <span>Experiments</span>
-                </Link>
-                <Link
                   to="/profile"
                   className="btn btn-outline btn-sm flex items-center space-x-2"
                 >

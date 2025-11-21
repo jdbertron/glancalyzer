@@ -7,7 +7,8 @@ import {
   BarChart3, 
   Calendar,
   FileText,
-  Download
+  Download,
+  Trash2
 } from 'lucide-react'
 
 interface PictureCardProps {
@@ -20,9 +21,11 @@ interface PictureCardProps {
     experimentCount: number
   }
   onAnalyzeFocus: (pictureId: string) => void
+  onDelete?: (pictureId: string) => void
+  isDeleting?: boolean
 }
 
-export function PictureCard({ picture, onAnalyzeFocus }: PictureCardProps) {
+export function PictureCard({ picture, onAnalyzeFocus, onDelete, isDeleting = false }: PictureCardProps) {
   const imageUrl = useQuery(api.pictures.getImageUrl, { fileId: picture.fileId })
 
   const formatDate = (timestamp: number) => {
@@ -87,15 +90,15 @@ export function PictureCard({ picture, onAnalyzeFocus }: PictureCardProps) {
               <span>Analyze Focus Areas</span>
             </button>
             
+            <Link
+              to="/dashboard"
+              className="btn btn-outline btn-sm w-full flex items-center justify-center space-x-1"
+            >
+              <BarChart3 className="h-4 w-4" />
+              <span>View Experiments</span>
+            </Link>
+            
             <div className="grid grid-cols-2 gap-2">
-              <Link
-                to={`/experiments?picture=${picture._id}`}
-                className="btn btn-outline btn-sm flex items-center justify-center space-x-1"
-              >
-                <BarChart3 className="h-4 w-4" />
-                <span>Experiments</span>
-              </Link>
-              
               <button
                 onClick={() => {
                   // Download functionality
@@ -111,6 +114,18 @@ export function PictureCard({ picture, onAnalyzeFocus }: PictureCardProps) {
                 <Download className="h-4 w-4" />
                 <span>Download</span>
               </button>
+              
+              {onDelete && (
+                <button
+                  onClick={() => onDelete(picture._id)}
+                  disabled={isDeleting}
+                  className="btn btn-outline btn-sm flex items-center justify-center space-x-1 text-red-600 hover:text-red-700 hover:border-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Delete picture"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span>{isDeleting ? 'Deleting...' : 'Delete'}</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

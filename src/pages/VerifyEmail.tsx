@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { CheckCircle, XCircle, ArrowLeft } from 'lucide-react'
 
 export function VerifyEmail() {
+  console.log('VerifyEmail component rendering')
+  
   const [searchParams] = useSearchParams()
   const [token, setToken] = useState('')
   const [isVerifying, setIsVerifying] = useState(false)
@@ -11,17 +13,17 @@ export function VerifyEmail() {
     success: boolean
     message: string
   } | null>(null)
-  const { verify } = useAuth()
+  
+  const auth = useAuth()
+  const verify = auth?.verify
+  console.log('useAuth hook called successfully', { hasVerify: !!verify, auth })
+  
+  const hasVerifiedRef = useRef(false)
 
-  useEffect(() => {
-    const tokenParam = searchParams.get('token')
-    if (tokenParam) {
-      setToken(tokenParam)
-      handleVerification(tokenParam)
-    }
-  }, [searchParams])
-
-  const handleVerification = async (tokenToVerify: string) => {
+  const handleVerification = useCallback(async (tokenToVerify: string) => {
+    if (hasVerifiedRef.current || !verify) return // Prevent duplicate verification
+    hasVerifiedRef.current = true
+    
     setIsVerifying(true)
     try {
       const result = await verify(tokenToVerify)
@@ -34,11 +36,19 @@ export function VerifyEmail() {
     } finally {
       setIsVerifying(false)
     }
-  }
+  }, [verify])
+
+  useEffect(() => {
+    const tokenParam = searchParams.get('token')
+    if (tokenParam && !hasVerifiedRef.current) {
+      setToken(tokenParam)
+      handleVerification(tokenParam)
+    }
+  }, [searchParams, handleVerification])
 
   const handleManualVerification = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!token.trim()) return
+    if (!token.trim() || !verify) return
     
     setIsVerifying(true)
     try {
@@ -68,6 +78,12 @@ export function VerifyEmail() {
           <p className="mt-2 text-center text-sm text-gray-600">
             Check your email for a verification link
           </p>
+          <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+            <p className="text-xs text-yellow-800">
+              <strong>Note:</strong> In development mode, verification emails are not actually sent. 
+              Check your Convex dashboard logs for the verification link, or enter a token manually below.
+            </p>
+          </div>
         </div>
 
         {isVerifying ? (

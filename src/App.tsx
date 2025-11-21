@@ -9,7 +9,6 @@ import { Register } from './pages/Register'
 import { VerifyEmail } from './pages/VerifyEmail'
 import { Dashboard } from './pages/Dashboard'
 import { Upload } from './pages/Upload'
-import { Experiments } from './pages/Experiments'
 import { ExperimentDetails } from './pages/ExperimentDetails'
 import { PictureExperiments } from './pages/PictureExperiments'
 import { EyeTrackingExperiment } from './pages/EyeTrackingExperiment'
@@ -37,13 +36,28 @@ function App() {
       <main>
         <Routes>
           <Route path="/" element={<Home />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/verify-email" element={<VerifyEmail />} />
-          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/login" element={
+            <ErrorBoundary>
+              <Login />
+            </ErrorBoundary>
+          } />
+          <Route path="/register" element={
+            <ErrorBoundary>
+              <Register />
+            </ErrorBoundary>
+          } />
+          <Route path="/verify-email" element={
+            <ErrorBoundary>
+              <VerifyEmail />
+            </ErrorBoundary>
+          } />
+          <Route path="/dashboard" element={
+            <ErrorBoundary>
+              <Dashboard />
+            </ErrorBoundary>
+          } />
           <Route path="/upload" element={<Upload />} />
           <Route path="/my-pictures" element={<MyPictures />} />
-          <Route path="/experiments" element={<Experiments />} />
           <Route path="/experiments/:experimentId" element={<ExperimentDetails />} />
           <Route path="/picture-experiments" element={
             <ErrorBoundary>

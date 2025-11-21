@@ -10,6 +10,7 @@ export function useAuth() {
 
   const user = useQuery(api.auth.getCurrentUser, userId ? { userId } : 'skip')
   const registerUser = useMutation(api.auth.registerUser)
+  const loginUser = useMutation(api.auth.loginUser)
   const verifyEmail = useMutation(api.auth.verifyEmail)
 
   useEffect(() => {
@@ -23,11 +24,28 @@ export function useAuth() {
 
   const login = async (email: string, name?: string) => {
     try {
-      const result = await registerUser({ email, name })
-      setUserId(result.userId)
-      localStorage.setItem('userId', result.userId)
-      toast.success(result.message)
-      return result
+      // First try to login (for verified users)
+      try {
+        const result = await loginUser({ email })
+        setUserId(result.userId)
+        localStorage.setItem('userId', result.userId)
+        toast.success(result.message)
+        return result
+      } catch (loginError) {
+        // If login fails (user not found or not verified), try to register
+        if (loginError instanceof Error && 
+            (loginError.message.includes('not found') || 
+             loginError.message.includes('not verified'))) {
+          // Try to register (will handle unverified users by resending verification)
+          const result = await registerUser({ email, name })
+          setUserId(result.userId)
+          localStorage.setItem('userId', result.userId)
+          toast.success(result.message)
+          return result
+        }
+        // Re-throw if it's a different error
+        throw loginError
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Login failed')
       throw error

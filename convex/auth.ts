@@ -26,26 +26,54 @@ export const registerUser = mutation({
       .withIndex("by_email", (q) => q.eq("email", args.email))
       .first();
 
+    let userId: Id<"users">;
+
     if (existingUser) {
       if (existingUser.emailVerified) {
         throw new Error("User already exists and is verified");
       } else {
-        throw new Error("User exists but email not verified. Please check your email.");
+        // User exists but not verified - update name if provided and resend verification
+        userId = existingUser._id;
+        
+        // Update user info if name is provided
+        if (args.name) {
+          await ctx.db.patch(userId, {
+            name: args.name,
+            lastActiveAt: Date.now(),
+          });
+        } else {
+          await ctx.db.patch(userId, {
+            lastActiveAt: Date.now(),
+          });
+        }
+
+        // Invalidate old unused tokens for this user
+        const oldTokens = await ctx.db
+          .query("emailVerificationTokens")
+          .withIndex("by_userId", (q) => q.eq("userId", userId))
+          .collect();
+        
+        // Mark all unused tokens as used
+        for (const oldToken of oldTokens) {
+          if (!oldToken.used) {
+            await ctx.db.patch(oldToken._id, { used: true });
+          }
+        }
       }
+    } else {
+      // Create new user
+      userId = await ctx.db.insert("users", {
+        email: args.email,
+        name: args.name,
+        emailVerified: false,
+        membershipTier: "free",
+        experimentCount: 0,
+        createdAt: Date.now(),
+        lastActiveAt: Date.now(),
+      });
     }
 
-    // Create new user
-    const userId = await ctx.db.insert("users", {
-      email: args.email,
-      name: args.name,
-      emailVerified: false,
-      membershipTier: "free",
-      experimentCount: 0,
-      createdAt: Date.now(),
-      lastActiveAt: Date.now(),
-    });
-
-    // Generate verification token
+    // Generate new verification token
     const token = generateToken();
     const expiresAt = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
 
@@ -65,7 +93,44 @@ export const registerUser = mutation({
 
     return {
       userId,
-      message: "Registration successful. Please check your email for verification.",
+      message: existingUser && !existingUser.emailVerified
+        ? "Verification email resent. Please check your email."
+        : "Registration successful. Please check your email for verification.",
+    };
+  },
+});
+
+// Login - find user by email (for verified users)
+export const loginUser = mutation({
+  args: {
+    email: v.string(),
+  },
+  returns: v.object({
+    userId: v.id("users"),
+    message: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .first();
+
+    if (!user) {
+      throw new Error("User not found. Please register first.");
+    }
+
+    if (!user.emailVerified) {
+      throw new Error("Email not verified. Please check your email for verification link.");
+    }
+
+    // Update last active time
+    await ctx.db.patch(user._id, {
+      lastActiveAt: Date.now(),
+    });
+
+    return {
+      userId: user._id,
+      message: "Login successful",
     };
   },
 });
@@ -145,7 +210,17 @@ export const getCurrentUser = query({
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
     if (!user) return null;
-    return user;
+    // Return only the fields specified in the validator (exclude _creationTime)
+    return {
+      _id: user._id,
+      email: user.email,
+      name: user.name,
+      emailVerified: user.emailVerified,
+      membershipTier: user.membershipTier,
+      experimentCount: user.experimentCount,
+      createdAt: user.createdAt,
+      lastActiveAt: user.lastActiveAt,
+    };
   },
 });
 

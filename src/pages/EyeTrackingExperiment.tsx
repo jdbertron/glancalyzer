@@ -13,7 +13,8 @@ import {
   CheckCircle,
   Loader2,
   Lightbulb,
-  Trash2
+  Trash2,
+  Settings
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { EYE_TRACKING_EXPERIMENT } from '../constants'
@@ -229,7 +230,19 @@ export function EyeTrackingExperiment() {
         if (isTracking) {
           // Update experiment data
           setGazeData(prev => [...prev, data])
-          console.log(`👁️ [React] Gaze point: (${Math.round(data.x)}, ${Math.round(data.y)})`)
+          
+          // Enhanced logging: show raw WebGazer coordinates with viewport context
+          const viewportWidth = window.innerWidth
+          const viewportHeight = window.innerHeight
+          const isWithinViewport = data.x >= 0 && data.x <= viewportWidth && 
+                                  data.y >= 0 && data.y <= viewportHeight
+          const outOfBounds = !isWithinViewport
+          
+          if (outOfBounds) {
+            console.warn(`👁️ [React] Gaze point OUT OF BOUNDS: (${Math.round(data.x)}, ${Math.round(data.y)}) | Viewport: ${viewportWidth}x${viewportHeight} | Raw WebGazer coordinates may exceed viewport bounds`)
+          } else {
+            console.log(`👁️ [React] Gaze point: (${Math.round(data.x)}, ${Math.round(data.y)})`)
+          }
         }
       })
     }
@@ -341,6 +354,23 @@ export function EyeTrackingExperiment() {
       setIsCalibrating(false)
     }
   }, [])
+
+  // Start recalibration (reset existing calibration and start new one)
+  const startRecalibration = useCallback(async () => {
+    console.log('🔄 [React] Recalibration button clicked')
+    
+    // Reset calibration state
+    setCalibrationResult(null)
+    setIsCalibrated(false)
+    setCompletedCalibrationPoints(new Set())
+    setClicksPerPoint(new Map())
+    setLastClickedPointIndex(null)
+    
+    // Start new calibration
+    await startCalibration()
+    
+    toast.success('Starting new calibration. Please click each red dot.')
+  }, [startCalibration])
 
   // Handle click on calibration point
   const handleCalibrationPointClick = useCallback((pointIndex: number, point: { x: number; y: number }) => {
@@ -576,13 +606,12 @@ export function EyeTrackingExperiment() {
       const viewportWidth = window.innerWidth
       const viewportHeight = window.innerHeight
       
-      // Get calibration domain (Webgazer's coordinate space)
-      // If calibration domain is not available, compute it from collected gaze points
-      // or use viewport as fallback (WebGazer coordinates are typically in viewport space)
+      // Note: WebGazer coordinates are already in viewport space, so we don't need calibration domain
+      // for mapping. We keep this for logging/debugging purposes only.
       let calDomain = webgazerManager.getCalibrationDomain()
       
       if (!calDomain && collectedData.length > 0) {
-        // Compute domain from collected gaze points
+        // Compute domain from collected gaze points (for logging only)
         const xValues = collectedData.map(p => p.x)
         const yValues = collectedData.map(p => p.y)
         const minX = Math.min(...xValues)
@@ -601,16 +630,16 @@ export function EyeTrackingExperiment() {
           maxY: maxY + paddingY
         }
         
-        console.log('📊 [React] Computed calibration domain from collected gaze points:', calDomain)
+        console.log('📊 [React] Computed calibration domain from collected gaze points (for logging):', calDomain)
       } else if (!calDomain) {
-        // Fallback: use viewport as calibration domain (WebGazer typically uses viewport coordinates)
+        // Fallback: use viewport as calibration domain (for logging only)
         calDomain = {
           minX: 0,
           maxX: viewportWidth,
           minY: 0,
           maxY: viewportHeight
         }
-        console.log('📊 [React] Using viewport as calibration domain fallback:', calDomain)
+        console.log('📊 [React] Using viewport as calibration domain fallback (for logging):', calDomain)
       }
       
       console.log('📊 [React] Coordinate system analysis:', {
@@ -624,22 +653,16 @@ export function EyeTrackingExperiment() {
           naturalWidth: imageBounds.naturalWidth,
           naturalHeight: imageBounds.naturalHeight,
         },
-        note: 'Webgazer coordinates will be mapped to viewport, then to image'
+        note: 'WebGazer coordinates are already in viewport space - mapping directly to image coordinates'
       })
       
-      // Two-step mapping:
-      // 1. Map Webgazer coordinates (calibration domain) to viewport coordinates
-      // 2. Map viewport coordinates to natural image coordinates
+      // Direct mapping: WebGazer coordinates are already in viewport space
+      // So we can directly map them to image coordinates without transformation
+      // This matches how CalibrationLab works - raw WebGazer coordinates are viewport-relative
       const mappedGazePoints = collectedData.map((point, idx) => {
-        // Step 1: Webgazer -> Viewport
-        const viewportPoint = webgazerManager.mapWebgazerToViewport(
-          point,
-          calDomain,
-          viewportWidth,
-          viewportHeight
-        )
-        // Step 2: Viewport -> Image
-        const mappedPoint = webgazerManager.mapToImageCoordinates(viewportPoint, imageBounds)
+        // WebGazer coordinates are already viewport coordinates (no transformation needed)
+        // Directly map viewport coordinates to natural image coordinates
+        const mappedPoint = webgazerManager.mapToImageCoordinates(point, imageBounds)
         
         // CRITICAL LOGGING: First point (should be middle of image) and last point (should be top-left)
         const isFirstPoint = idx === 0
@@ -647,24 +670,15 @@ export function EyeTrackingExperiment() {
         
         if (isFirstPoint || isLastPoint) {
           console.log(`🔍 [CRITICAL] ${isFirstPoint ? 'FIRST' : 'LAST'} Point Analysis (idx=${idx}):`)
-          console.log('  1. Raw Webgazer coordinates:', {
+          console.log('  1. Raw WebGazer coordinates (viewport space):', {
             x: point.x,
             y: point.y,
             timestamp: point.timestamp,
-            confidence: point.confidence
+            confidence: point.confidence,
+            viewportXPercent: (point.x / viewportWidth) * 100,
+            viewportYPercent: (point.y / viewportHeight) * 100
           })
-          console.log('  2. Calibration domain used:', calDomain)
-          console.log('  3. Viewport dimensions:', {
-            width: viewportWidth,
-            height: viewportHeight
-          })
-          console.log('  4. After viewport mapping:', {
-            x: viewportPoint.x,
-            y: viewportPoint.y,
-            viewportXPercent: (viewportPoint.x / viewportWidth) * 100,
-            viewportYPercent: (viewportPoint.y / viewportHeight) * 100
-          })
-          console.log('  5. Image bounds used:', {
+          console.log('  2. Image bounds used:', {
             x: imageBounds.x,
             y: imageBounds.y,
             width: imageBounds.width,
@@ -672,50 +686,49 @@ export function EyeTrackingExperiment() {
             naturalWidth: imageBounds.naturalWidth,
             naturalHeight: imageBounds.naturalHeight
           })
-          console.log('  6. Final mapped coordinates (natural image space):', {
+          console.log('  3. Relative position in image display area:', {
+            relativeX: (point.x - imageBounds.x) / imageBounds.width,
+            relativeY: (point.y - imageBounds.y) / imageBounds.height,
+            isInImageBounds: point.x >= imageBounds.x && 
+                            point.x <= imageBounds.x + imageBounds.width &&
+                            point.y >= imageBounds.y && 
+                            point.y <= imageBounds.y + imageBounds.height
+          })
+          console.log('  4. Final mapped coordinates (natural image space):', {
             x: mappedPoint.x,
             y: mappedPoint.y,
             naturalXPercent: (mappedPoint.x / imageBounds.naturalWidth) * 100,
             naturalYPercent: (mappedPoint.y / imageBounds.naturalHeight) * 100
           })
-          console.log('  7. Expected location:', {
+          console.log('  5. Expected location:', {
             first: 'Should be near middle of image (~50%, ~50%)',
             last: 'Should be near top-left corner (~0%, ~0%)'
-          })
-          console.log('  8. Relative position in image display area:', {
-            relativeX: (viewportPoint.x - imageBounds.x) / imageBounds.width,
-            relativeY: (viewportPoint.y - imageBounds.y) / imageBounds.height,
-            isInImageBounds: viewportPoint.x >= imageBounds.x && 
-                            viewportPoint.x <= imageBounds.x + imageBounds.width &&
-                            viewportPoint.y >= imageBounds.y && 
-                            viewportPoint.y <= imageBounds.y + imageBounds.height
           })
         }
         
         // Detailed logging for first 3 points (keep existing for compatibility)
         if (idx < 3) {
-          // Calculate if viewport point is within image bounds
-          const isInImageBounds = viewportPoint.x >= imageBounds.x && 
-                                 viewportPoint.x <= imageBounds.x + imageBounds.width &&
-                                 viewportPoint.y >= imageBounds.y && 
-                                 viewportPoint.y <= imageBounds.y + imageBounds.height
+          // Calculate if raw WebGazer point is within image bounds (WebGazer coords are viewport coords)
+          const isInImageBounds = point.x >= imageBounds.x && 
+                                 point.x <= imageBounds.x + imageBounds.width &&
+                                 point.y >= imageBounds.y && 
+                                 point.y <= imageBounds.y + imageBounds.height
           
           // Calculate relative position in viewport
-          const viewportXPercent = (viewportPoint.x / viewportWidth) * 100
-          const viewportYPercent = (viewportPoint.y / viewportHeight) * 100
+          const viewportXPercent = (point.x / viewportWidth) * 100
+          const viewportYPercent = (point.y / viewportHeight) * 100
           
           // Calculate relative position within image display area
-          const relativeInImageX = (viewportPoint.x - imageBounds.x) / imageBounds.width
-          const relativeInImageY = (viewportPoint.y - imageBounds.y) / imageBounds.height
+          const relativeInImageX = (point.x - imageBounds.x) / imageBounds.width
+          const relativeInImageY = (point.y - imageBounds.y) / imageBounds.height
           
           console.log(`📍 [React] Mapping point ${idx}:`, {
-            webgazerOriginal: { x: point.x, y: point.y },
-            calibrationDomain: calDomain,
-            viewportMapped: { 
-              x: viewportPoint.x, 
-              y: viewportPoint.y,
+            webgazerRaw: { 
+              x: point.x, 
+              y: point.y,
               xPercent: viewportXPercent.toFixed(1),
-              yPercent: viewportYPercent.toFixed(1)
+              yPercent: viewportYPercent.toFixed(1),
+              note: 'WebGazer coordinates are already in viewport space'
             },
             imageBounds: { 
               x: imageBounds.x, 
@@ -729,8 +742,8 @@ export function EyeTrackingExperiment() {
               isInBounds: isInImageBounds,
               relativeX: relativeInImageX.toFixed(3),
               relativeY: relativeInImageY.toFixed(3),
-              distanceFromLeftEdge: (viewportPoint.x - imageBounds.x).toFixed(1),
-              distanceFromTopEdge: (viewportPoint.y - imageBounds.y).toFixed(1)
+              distanceFromLeftEdge: (point.x - imageBounds.x).toFixed(1),
+              distanceFromTopEdge: (point.y - imageBounds.y).toFixed(1)
             },
             finalMapped: { x: mappedPoint.x, y: mappedPoint.y },
             relativeToNatural: {
@@ -753,25 +766,7 @@ export function EyeTrackingExperiment() {
         console.warn('Gaze data validation failed:', validation.issues)
       }
       
-      // Create experiment
-      const experimentResponse = await createExperiment({
-        pictureId: pictureId as any,
-        userId: userId || undefined,
-        experimentType: 'Eye Tracking',
-        parameters: {
-          duration: EYE_TRACKING_EXPERIMENT.DURATION_SECONDS,
-          gazeDataCount: validation.validPoints.length,
-          originalGazeDataCount: collectedData.length,
-          validationIssues: validation.issues
-        }
-      })
-      
-      // Extract the experiment ID from the response
-      const experimentId = typeof experimentResponse === 'string' 
-        ? experimentResponse 
-        : experimentResponse.experimentId
-      
-      // Process and save results with validated data
+      // Process results FIRST (before saving) so user can see results even if save fails
       const processedData: EyeTrackingData = {
         gazePoints: validation.validPoints,
         fixationPoints: detectFixations(validation.validPoints),
@@ -780,31 +775,104 @@ export function EyeTrackingExperiment() {
         heatmapData: null // TODO: Implement heatmap generation
       }
       
-      await updateEyeTrackingResults({
-        experimentId: experimentId as any,
-        status: 'completed',
-        eyeTrackingData: processedData
-      })
-      
+      // Set results immediately so they're available even if save fails
       setExperimentResults(processedData)
-      setShowResults(true)
       
-      const successMessage = validation.isValid 
-        ? `Eye tracking completed! Collected ${validation.validPoints.length} valid gaze points.`
-        : `Eye tracking completed with issues. Collected ${validation.validPoints.length} valid points (${validation.issues.length} issues detected).`
+      // Try to save experiment (but don't block showing results if it fails)
+      let experimentId: string | null = null
+      try {
+        const experimentResponse = await createExperiment({
+          pictureId: pictureId as any,
+          userId: userId || undefined,
+          experimentType: 'Eye Tracking',
+          parameters: {
+            duration: EYE_TRACKING_EXPERIMENT.DURATION_SECONDS,
+            gazeDataCount: validation.validPoints.length,
+            originalGazeDataCount: collectedData.length,
+            validationIssues: validation.issues
+          }
+        })
+        
+        // Extract the experiment ID from the response
+        experimentId = typeof experimentResponse === 'string' 
+          ? experimentResponse 
+          : experimentResponse.experimentId
+        
+        // Update experiment with eye tracking data
+        await updateEyeTrackingResults({
+          experimentId: experimentId as any,
+          status: 'completed',
+          eyeTrackingData: processedData
+        })
+        
+        const successMessage = validation.isValid 
+          ? `Eye tracking completed! Collected ${validation.validPoints.length} valid gaze points.`
+          : `Eye tracking completed with issues. Collected ${validation.validPoints.length} valid points (${validation.issues.length} issues detected).`
+        
+        toast.success(successMessage)
+        
+        // Navigate to experiment details page to view results
+        navigate(`/experiments/${experimentId}`)
+      } catch (saveError) {
+        // Handle save errors gracefully - results are still available and displayed
+        const errorMessage = saveError instanceof Error ? saveError.message : String(saveError)
+        
+        // Show informative message - use warning style for non-critical issues
+        if (errorMessage.includes('limit reached')) {
+          toast('Experiment limit reached. Your results are displayed below but were not saved.', {
+            duration: 5000,
+            style: {
+              background: '#FEF3C7',
+              color: '#92400E',
+            },
+          })
+        } else if (errorMessage.includes('not authorized') || errorMessage.includes('authorized')) {
+          toast('Unable to save experiment. Your results are displayed below.', {
+            duration: 5000,
+            style: {
+              background: '#FEF3C7',
+              color: '#92400E',
+            },
+          })
+        } else {
+          toast('Unable to save experiment to your account. Your results are displayed below.', {
+            duration: 5000,
+            style: {
+              background: '#FEF3C7',
+              color: '#92400E',
+            },
+          })
+        }
+        
+        // Show results inline since we couldn't save/navigate
+        setShowResults(true)
+      }
       
-      toast.success(successMessage)
-      
-      // Stop webcam after experiment completion
+      // Stop webcam after experiment completion (whether save succeeded or failed)
       await webgazerManager.stopWebcam()
       
     } catch (error) {
-      console.error('❌ [React] Failed to save experiment:', error)
-      toast.error('Failed to save experiment results.')
-      // Still show results even if saving failed
-      setShowResults(true)
+      // Only log as error if we truly failed to process (no results available)
+      const errorMessage = error instanceof Error ? error.message : String(error)
       
-      // Stop webcam even if saving failed
+      // If we have results, this is not a critical failure
+      if (experimentResults) {
+        console.warn('⚠️ [React] Processing completed with warnings:', errorMessage)
+        toast('Experiment completed with some issues. Results are displayed below.', {
+          duration: 4000,
+          style: {
+            background: '#FEF3C7',
+            color: '#92400E',
+          },
+        })
+        setShowResults(true)
+      } else {
+        // True failure - no results available
+        console.error('❌ [React] Failed to process experiment:', error)
+        toast.error('Failed to process experiment results. Please try again.')
+      }
+      
+      // Stop webcam even if processing failed
       await webgazerManager.stopWebcam()
     } finally {
       // Reset processing flag
@@ -1129,25 +1197,55 @@ export function EyeTrackingExperiment() {
 
                 {/* Step 3: Start Experiment */}
                 {isCalibrated && !isTracking && (
-                  <div className="flex items-center space-x-2 p-2 bg-gray-50 rounded-lg">
-                    <div className="flex-shrink-0">
-                      <div className="h-4 w-4 rounded-full border-2 border-primary-500" />
+                  <div className="space-y-2">
+                    <div className="flex items-center space-x-2 p-2 bg-gray-50 rounded-lg">
+                      <div className="flex-shrink-0">
+                        <div className="h-4 w-4 rounded-full border-2 border-primary-500" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-medium text-gray-900 text-xs">
+                          Start {EYE_TRACKING_EXPERIMENT.DURATION_SECONDS}-Second Session
+                        </h3>
+                        <p className="text-xs text-gray-600">
+                          Ready to start - look at the image naturally for {EYE_TRACKING_EXPERIMENT.DURATION_SECONDS} seconds
+                        </p>
+                      </div>
+                      <button
+                        onClick={startTracking}
+                        className="btn btn-primary btn-sm text-xs px-2 py-1"
+                      >
+                        <Play className="h-3 w-3 mr-1" />
+                        Start
+                      </button>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-medium text-gray-900 text-xs">
-                        Start {EYE_TRACKING_EXPERIMENT.DURATION_SECONDS}-Second Session
-                      </h3>
-                      <p className="text-xs text-gray-600">
-                        Ready to start - look at the image naturally for {EYE_TRACKING_EXPERIMENT.DURATION_SECONDS} seconds
-                      </p>
+                    <div className="flex items-center space-x-2 p-2 bg-yellow-50 rounded-lg border border-yellow-200">
+                      <div className="flex-shrink-0">
+                        <AlertCircle className="h-4 w-4 text-yellow-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-yellow-800 font-medium mb-1">
+                          Tracking not accurate?
+                        </p>
+                        <p className="text-xs text-yellow-700">
+                          If the eye tracking seems off, try recalibrating for better accuracy.
+                        </p>
+                      </div>
+                      <button
+                        onClick={startRecalibration}
+                        disabled={isCalibrating}
+                        className="btn btn-outline btn-sm text-xs px-2 py-1 border-yellow-300 text-yellow-700 hover:bg-yellow-100"
+                        title="Start a new calibration to improve tracking accuracy"
+                      >
+                        {isCalibrating ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <>
+                            <Settings className="h-3 w-3 mr-1" />
+                            Recalibrate
+                          </>
+                        )}
+                      </button>
                     </div>
-                    <button
-                      onClick={startTracking}
-                      className="btn btn-primary btn-sm text-xs px-2 py-1"
-                    >
-                      <Play className="h-3 w-3 mr-1" />
-                      Start
-                    </button>
                   </div>
                 )}
 
@@ -1203,6 +1301,62 @@ export function EyeTrackingExperiment() {
                       {currentGazePoint && (
                         <div>Current Gaze: ({Math.round(currentGazePoint.x)}, {Math.round(currentGazePoint.y)})</div>
                       )}
+                      {gazeData.length > 0 && (() => {
+                        const xValues = gazeData.map(p => p.x)
+                        const yValues = gazeData.map(p => p.y)
+                        const minX = Math.min(...xValues)
+                        const maxX = Math.max(...xValues)
+                        const minY = Math.min(...yValues)
+                        const maxY = Math.max(...yValues)
+                        return (
+                          <div className="mt-2 pt-2 border-t border-gray-300">
+                            <div className="font-medium text-gray-700 mb-1">Gaze Range (Raw):</div>
+                            <div className="space-y-0.5 text-xs">
+                              <div>X: {minX.toFixed(1)} to {maxX.toFixed(1)}</div>
+                              <div>Y: {minY.toFixed(1)} to {maxY.toFixed(1)}</div>
+                            </div>
+                            {imageRef.current && imageNaturalDimensions && (() => {
+                              const imageWidth = imageNaturalDimensions.width
+                              const imageHeight = imageNaturalDimensions.height
+                              const imageRect = imageRef.current!.getBoundingClientRect()
+                              const imageBounds = {
+                                x: imageRect.left,
+                                y: imageRect.top,
+                                width: imageRef.current!.offsetWidth,
+                                height: imageRef.current!.offsetHeight,
+                                naturalWidth: imageWidth,
+                                naturalHeight: imageHeight
+                              }
+                              // WebGazer coordinates are already in viewport space, map directly to image coordinates
+                              const mappedPoints = gazeData.map(point => {
+                                return webgazerManager.mapToImageCoordinates(point, imageBounds)
+                              })
+                              const mappedXValues = mappedPoints.map(p => p.x)
+                              const mappedYValues = mappedPoints.map(p => p.y)
+                              const mappedMinX = Math.min(...mappedXValues)
+                              const mappedMaxX = Math.max(...mappedXValues)
+                              const mappedMinY = Math.min(...mappedYValues)
+                              const mappedMaxY = Math.max(...mappedYValues)
+                              const pointsOutsideX = mappedPoints.filter(p => p.x < 0 || p.x > imageWidth).length
+                              const pointsOutsideY = mappedPoints.filter(p => p.y < 0 || p.y > imageHeight).length
+                              return (
+                                <div className="mt-2 pt-2 border-t border-gray-300">
+                                  <div className="font-medium text-gray-700 mb-1">Gaze Range (Mapped to Image):</div>
+                                  <div className="space-y-0.5 text-xs">
+                                    <div>X: {mappedMinX.toFixed(1)} to {mappedMaxX.toFixed(1)} (image: 0 to {imageWidth})</div>
+                                    <div>Y: {mappedMinY.toFixed(1)} to {mappedMaxY.toFixed(1)} (image: 0 to {imageHeight})</div>
+                                  </div>
+                                  {(pointsOutsideX > 0 || pointsOutsideY > 0) && (
+                                    <div className="mt-1 text-xs text-orange-600">
+                                      ⚠️ {pointsOutsideX} points outside X bounds, {pointsOutsideY} outside Y bounds
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })()}
+                          </div>
+                        )
+                      })()}
                       {calibrationResult && (
                         <div className="space-y-2">
                           <div>Calibration: {calibrationResult.pointsCollected} points, {calibrationResult.isValid ? 'Valid' : 'Invalid'}</div>

@@ -110,10 +110,10 @@ export function ExperimentDetails() {
             This experiment doesn't exist or you don't have access to it.
           </p>
           <button
-            onClick={() => navigate('/experiments')}
+            onClick={() => navigate('/dashboard')}
             className="btn btn-primary"
           >
-            Back to Experiments
+            Back to Dashboard
           </button>
         </div>
       </div>
@@ -131,7 +131,7 @@ export function ExperimentDetails() {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
               <button
-                onClick={() => navigate('/experiments')}
+                onClick={() => navigate('/dashboard')}
                 className="text-gray-400 hover:text-gray-600"
               >
                 <ArrowLeft className="h-6 w-6" />

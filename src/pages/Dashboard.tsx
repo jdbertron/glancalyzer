@@ -5,10 +5,102 @@ import { Link } from 'react-router-dom'
 import { Upload, BarChart3, Image, Clock, CheckCircle } from 'lucide-react'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 
+// Component for individual experiment item with thumbnail - compact one-line version
+function ExperimentItem({ experiment }: { experiment: any }) {
+  const imageUrl = useQuery(api.pictures.getImageUrl, 
+    experiment.picture?.fileId ? { fileId: experiment.picture.fileId } : 'skip'
+  )
+  
+  const experimentDate = new Date(experiment.createdAt)
+  
+  return (
+    <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+      {/* Thumbnail */}
+      {imageUrl && (
+        <div className="flex-shrink-0">
+          <img 
+            src={imageUrl} 
+            alt={experiment.picture?.fileName || 'Experiment image'}
+            className="w-12 h-12 object-cover rounded"
+          />
+        </div>
+      )}
+      <div className="flex-shrink-0">
+        {experiment.status === 'completed' ? (
+          <CheckCircle className="h-4 w-4 text-green-500" />
+        ) : experiment.status === 'failed' ? (
+          <div className="h-4 w-4 rounded-full bg-red-500 flex items-center justify-center">
+            <span className="text-white text-[10px]">!</span>
+          </div>
+        ) : (
+          <Clock className="h-4 w-4 text-yellow-500" />
+        )}
+      </div>
+      <div className="flex-1 min-w-0 flex items-center gap-3">
+        <span className="text-sm font-medium text-gray-900">
+          {experiment.experimentType}
+        </span>
+        <span className="text-xs text-gray-500">
+          {experimentDate.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          })}
+        </span>
+        {experiment.picture && (
+          <span className="text-xs text-gray-400 truncate">
+            {experiment.picture.fileName}
+          </span>
+        )}
+      </div>
+      <Link
+        to={`/experiments/${experiment._id}`}
+        className="btn btn-outline btn-sm flex-shrink-0"
+      >
+        View
+      </Link>
+    </div>
+  )
+}
+
 export function Dashboard() {
   const { user, userId } = useAuth()
-  const pictures = useQuery(api.pictures.getUserPictures, userId ? { userId } : 'skip')
+  // Get user's pictures from direct uploads
+  const userPictures = useQuery(api.pictures.getUserPictures, userId ? { userId } : 'skip')
+  // Get pictures from experiments
+  const picturesFromExperiments = useQuery(
+    api.pictures.getPicturesFromExperiments, 
+    userId ? { userId } : 'skip'
+  )
   const experiments = useQuery(api.experiments.getUserExperiments, userId ? { userId } : 'skip')
+
+  // Combine both sources: direct user pictures + pictures from experiments
+  // Deduplicate by _id, preferring direct user pictures (they have more complete data)
+  const allPictures = (() => {
+    if (userPictures === undefined || picturesFromExperiments === undefined) return []
+    const userPics = userPictures || []
+    const expPics = picturesFromExperiments || []
+    
+    // Start with user pictures, then add experiment pictures that aren't already included
+    const combined: any[] = [...userPics]
+    const userPicIds = new Set(userPics.map(p => p._id))
+    
+    expPics.forEach(expPic => {
+      if (!userPicIds.has(expPic._id)) {
+        combined.push(expPic)
+      }
+    })
+    
+    // Sort by uploadedAt descending (newest first)
+    return combined.sort((a, b) => b.uploadedAt - a.uploadedAt)
+  })()
+
+  // Handle case where user query might have failed (e.g., validation error)
+  // If userId exists but user query completed and returned null, there's likely an error
+  // Note: user will be undefined while loading, null if query completed but user not found
+  // We check this after the loading check to avoid false positives during initial load
 
   if (!user) {
     return (
@@ -25,7 +117,7 @@ export function Dashboard() {
     )
   }
 
-  if (pictures === undefined || experiments === undefined) {
+  if (userPictures === undefined || picturesFromExperiments === undefined || experiments === undefined) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <LoadingSpinner size="lg" />
@@ -33,9 +125,7 @@ export function Dashboard() {
     )
   }
 
-  const recentPictures = pictures.slice(0, 3)
   const recentExperiments = experiments.slice(0, 5)
-  const completedExperiments = experiments.filter(exp => exp.status === 'completed').length
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
@@ -50,14 +140,14 @@ export function Dashboard() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="card">
             <div className="card-content">
               <div className="flex items-center">
                 <Image className="h-8 w-8 text-primary-600" />
                 <div className="ml-4">
                   <p className="text-sm font-medium text-gray-500">Total Pictures</p>
-                  <p className="text-2xl font-bold text-gray-900">{pictures.length}</p>
+                  <p className="text-2xl font-bold text-gray-900">{allPictures.length}</p>
                 </div>
               </div>
             </div>
@@ -78,18 +168,6 @@ export function Dashboard() {
           <div className="card">
             <div className="card-content">
               <div className="flex items-center">
-                <CheckCircle className="h-8 w-8 text-blue-600" />
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-500">Completed</p>
-                  <p className="text-2xl font-bold text-gray-900">{completedExperiments}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="card">
-            <div className="card-content">
-              <div className="flex items-center">
                 <Clock className="h-8 w-8 text-yellow-600" />
                 <div className="ml-4">
                   <p className="text-sm font-medium text-gray-500">Membership</p>
@@ -100,117 +178,33 @@ export function Dashboard() {
           </div>
         </div>
 
-        <div className="grid lg:grid-cols-2 gap-8">
-          {/* Recent Pictures */}
-          <div className="card">
-            <div className="card-header">
-              <h2 className="card-title">Recent Pictures</h2>
-              <p className="card-description">Your latest uploaded images</p>
-            </div>
-            <div className="card-content">
-              {recentPictures.length === 0 ? (
-                <div className="text-center py-8">
-                  <Image className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">
-                    No pictures yet
-                  </h3>
-                  <p className="text-gray-600 mb-4">
-                    Upload your first image to get started
-                  </p>
-                  <Link to="/upload" className="btn btn-primary">
-                    Upload Image
-                  </Link>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {recentPictures.map((picture) => (
-                    <div key={picture._id} className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg">
-                      <Image className="h-8 w-8 text-gray-400" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate">
-                          {picture.fileName}
-                        </p>
-                        <p className="text-sm text-gray-500">
-                          {picture.experimentCount} experiment{picture.experimentCount !== 1 ? 's' : ''}
-                        </p>
-                      </div>
-                      <Link
-                        to={`/experiments?picture=${picture._id}`}
-                        className="btn btn-outline btn-sm"
-                      >
-                        View
-                      </Link>
-                    </div>
-                  ))}
-                  <div className="text-center">
-                    <Link to="/experiments" className="btn btn-outline">
-                      View All Pictures
-                    </Link>
-                  </div>
-                </div>
-              )}
-            </div>
+        {/* Recent Experiments */}
+        <div className="card">
+          <div className="card-header">
+            <h2 className="card-title">Recent Experiments</h2>
+            <p className="card-description">Your latest AI analysis results</p>
           </div>
-
-          {/* Recent Experiments */}
-          <div className="card">
-            <div className="card-header">
-              <h2 className="card-title">Recent Experiments</h2>
-              <p className="card-description">Your latest AI analysis results</p>
-            </div>
-            <div className="card-content">
-              {recentExperiments.length === 0 ? (
-                <div className="text-center py-8">
-                  <BarChart3 className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">
-                    No experiments yet
-                  </h3>
-                  <p className="text-gray-600 mb-4">
-                    Upload an image and run your first experiment
-                  </p>
-                  <Link to="/upload" className="btn btn-primary">
-                    Upload Image
-                  </Link>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {recentExperiments.map((experiment) => (
-                    <div key={experiment._id} className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg">
-                      <div className="flex-shrink-0">
-                        {experiment.status === 'completed' ? (
-                          <CheckCircle className="h-6 w-6 text-green-500" />
-                        ) : experiment.status === 'failed' ? (
-                          <div className="h-6 w-6 rounded-full bg-red-500 flex items-center justify-center">
-                            <span className="text-white text-xs">!</span>
-                          </div>
-                        ) : (
-                          <Clock className="h-6 w-6 text-yellow-500" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900">
-                          {experiment.experimentType}
-                        </p>
-                        <p className="text-sm text-gray-500 capitalize">
-                          {experiment.status}
-                        </p>
-                      </div>
-                      <Link
-                        to={`/experiments/${experiment._id}`}
-                        className="btn btn-outline btn-sm"
-                      >
-                        View
-                      </Link>
-                    </div>
-                  ))}
-                  <div className="text-center">
-                    <Link to="/experiments" className="btn btn-outline">
-                      View All Experiments
-                    </Link>
-                  </div>
-                </div>
-              )}
-            </div>
+          <div className="card-content">
+            {recentExperiments.length === 0 ? (
+              <div className="text-center py-8">
+                <BarChart3 className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                  No experiments yet
+                </h3>
+                <p className="text-gray-600 mb-4">
+                  Upload an image and run your first experiment
+                </p>
+                <Link to="/upload" className="btn btn-primary">
+                  Upload Image
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {recentExperiments.map((experiment) => (
+                  <ExperimentItem key={experiment._id} experiment={experiment} />
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -235,13 +229,13 @@ export function Dashboard() {
                 </Link>
 
                 <Link
-                  to="/experiments"
+                  to="/my-pictures"
                   className="flex items-center space-x-3 p-4 border border-gray-200 rounded-lg hover:border-primary-300 hover:bg-primary-50 transition-colors"
                 >
-                  <BarChart3 className="h-6 w-6 text-primary-600" />
+                  <Image className="h-6 w-6 text-primary-600" />
                   <div>
-                    <p className="font-medium text-gray-900">View Experiments</p>
-                    <p className="text-sm text-gray-500">See all your analysis</p>
+                    <p className="font-medium text-gray-900">My Pictures</p>
+                    <p className="text-sm text-gray-500">Manage your images</p>
                   </div>
                 </Link>
 

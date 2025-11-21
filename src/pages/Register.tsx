@@ -4,10 +4,16 @@ import { useAuth } from '../hooks/useAuth'
 import { Mail, User, ArrowLeft } from 'lucide-react'
 
 export function Register() {
+  console.log('Register component rendering')
+  
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const { login } = useAuth()
+  
+  const auth = useAuth()
+  const login = auth?.login
+  console.log('useAuth hook called successfully', { hasLogin: !!login, auth })
+  
   const navigate = useNavigate()
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -15,13 +21,28 @@ export function Register() {
     setIsLoading(true)
 
     try {
+      if (!login) {
+        throw new Error('Login function not available')
+      }
       await login(email, name)
       navigate('/verify-email')
     } catch (error) {
+      console.error('Registration error:', error)
       // Error is handled in the hook
     } finally {
       setIsLoading(false)
     }
+  }
+
+  if (!login) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-md w-full space-y-8 text-center">
+          <h2 className="text-2xl font-bold text-gray-900">Error</h2>
+          <p className="text-gray-600">Authentication system is not available. Please refresh the page.</p>
+        </div>
+      </div>
+    )
   }
 
   return (
