@@ -93,9 +93,9 @@ export function CalibrationLab() {
           logCount++
         }
         
-        if (isCalibrating) {
-          console.log(`🔍 [CalibrationLab] Calibration point: (${Math.round(data.x)}, ${Math.round(data.y)})`)
-        }
+        // if (isCalibrating) {
+        //   console.log(`🔍 [CalibrationLab] Calibration point: (${Math.round(data.x)}, ${Math.round(data.y)})`)
+        // }
         
         if (isTracking) {
           setGazeData(prev => {
@@ -259,68 +259,10 @@ export function CalibrationLab() {
 
     // Draw current gaze point (larger and more prominent)
     if (currentGazePoint && isTracking) {
-      // MODIFICATIONS COMMENTED OUT - Using raw WebGazer coordinates directly
+
       // Transform WebGazer coordinates to viewport coordinates
       let x = currentGazePoint.x
       let y = currentGazePoint.y
-      
-      // COMMENTED OUT: Coordinate transformation logic
-      // // CRITICAL: WebGazer's coordinate system has an offset based on calibration domain
-      // // We need to subtract the calibration domain minimum to get viewport-relative coordinates
-      // const calDomain = webgazerManager.getCalibrationDomain()
-      // if (calDomain) {
-      //   // Normalize coordinates relative to calibration domain origin
-      //   x -= calDomain.minX
-      //   y -= calDomain.minY
-      //   
-      //   // Now map to viewport using the calibration domain span
-      //   if (!useRawCoordinates) {
-      //     const domainSpanX = calDomain.maxX - calDomain.minX
-      //     const domainSpanY = calDomain.maxY - calDomain.minY
-      //     
-      //     // Map normalized coordinates [0, domainSpan] to viewport [0, viewportSize]
-      //     const normalizedX = domainSpanX > 0 ? (x / domainSpanX) : 0
-      //     const normalizedY = domainSpanY > 0 ? (y / domainSpanY) : 0
-      //     
-      //     x = normalizedX * canvas.width
-      //     y = normalizedY * canvas.height
-      //   }
-      // } else {
-      //   // Fallback: account for page scroll if no calibration domain
-      //   if (accountForScroll) {
-      //     x -= window.scrollX
-      //     y -= window.scrollY
-      //   }
-      // }
-      //
-      
-      // COMMENTED OUT: Debug logging for coordinate transformation
-      // if (coordinateDebug && gazeData.length % 30 === 0) {
-      //   const calDomain = webgazerManager.getCalibrationDomain()
-      //   console.log('🔍 [CalibrationLab] Coordinate transformation:', {
-      //     rawWebGazer: { x: currentGazePoint.x, y: currentGazePoint.y },
-      //     scroll: { x: window.scrollX, y: window.scrollY },
-      //     afterScroll: accountForScroll ? { 
-      //       x: currentGazePoint.x - window.scrollX, 
-      //       y: currentGazePoint.y - window.scrollY 
-      //     } : null,
-      //     calibrationDomain: calDomain,
-      //     useRawCoordinates,
-      //     viewport: { width: canvas.width, height: canvas.height },
-      //     screen: { width: window.screen.width, height: window.screen.height },
-      //     devicePixelRatio: window.devicePixelRatio,
-      //     final: { x, y },
-      //     // Calculate what percentage of viewport/screen the raw coordinates represent
-      //     rawAsViewportPercent: {
-      //       x: (currentGazePoint.x / canvas.width) * 100,
-      //       y: (currentGazePoint.y / canvas.height) * 100
-      //     },
-      //     rawAsScreenPercent: {
-      //       x: (currentGazePoint.x / window.screen.width) * 100,
-      //       y: (currentGazePoint.y / window.screen.height) * 100
-      //     }
-      //   })
-      // }
 
       // Draw outer ring
       ctx.beginPath()
@@ -427,10 +369,17 @@ export function CalibrationLab() {
     const currentClicks = clicksPerPoint.get(pointIndex) || 0
     const newClickCount = currentClicks + 1
     
-    console.log(`🖱️ [CalibrationLab] Calibration point ${pointIndex + 1}/${calibrationPoints.length} - Click ${newClickCount}/${CLICKS_PER_POINT} at (${Math.round(point.x)}, ${Math.round(point.y)})`)
-    
+    //console.log(`🖱️ [CalibrationLab] Calibration point ${pointIndex + 1}/${calibrationPoints.length} - Click ${newClickCount}/${CLICKS_PER_POINT} at (${Math.round(point.x)}, ${Math.round(point.y)})`)
     // WebGazer automatically learns from this click - no manual recording needed
     // The click event will be captured by WebGazer's built-in self-calibration system
+    
+    // Re-enable saveDataAcrossSessions right before the final click so the last click saves the data
+    // This prevents blocking IndexedDB writes during calibration while ensuring data is saved at the end
+    // Check if this is the last point that needs to be completed, and if so, re-enable before its final click
+    if (allOtherPointsCompleted && currentClicks === CLICKS_PER_POINT - 1) {
+      webgazerManager.setSaveDataAcrossSessions(true)
+      console.log('💾 [CalibrationLab] Re-enabled saveDataAcrossSessions before final click to save calibration data')
+    }
     
     // Update last clicked point index
     setLastClickedPointIndex(pointIndex)

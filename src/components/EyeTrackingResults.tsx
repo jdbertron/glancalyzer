@@ -87,12 +87,12 @@ export function EyeTrackingResults({
       canvasRef.current.height = displayedImageHeight
     }
     
-    console.log('📐 [Canvas] Position updated:', {
-      imageOffset: { width: imageWidth, height: imageHeight },
-      imageDisplayed: { width: displayedImageWidth, height: displayedImageHeight },
-      canvasPosition: { left: canvasLeft, top: canvasTop },
-      canvasSize: { width: displayedImageWidth, height: displayedImageHeight }
-    })
+    // console.log('📐 [Canvas] Position updated:', {
+    //   imageOffset: { width: imageWidth, height: imageHeight },
+    //   imageDisplayed: { width: displayedImageWidth, height: displayedImageHeight },
+    //   canvasPosition: { left: canvasLeft, top: canvasTop },
+    //   canvasSize: { width: displayedImageWidth, height: displayedImageHeight }
+    // })
   }, [])
 
 
@@ -132,17 +132,17 @@ export function EyeTrackingResults({
       const y = (point.y / imageHeight) * canvas.height
       
       // Debug: Log first few points to see actual coordinates
-      if (index < 3) {
-        console.log(`🔍 [Heatmap] Point ${index}:`, {
-          originalNaturalCoords: { x: point.x, y: point.y },
-          naturalDimensions: { width: imageWidth, height: imageHeight },
-          displayedDimensions: { width: imageRef.current!.offsetWidth, height: imageRef.current!.offsetHeight },
-          canvasDimensions: { width: canvas.width, height: canvas.height },
-          finalCanvasCoords: { x, y },
-          xRatio: point.x / imageWidth,
-          yRatio: point.y / imageHeight
-        })
-      }
+      // if (index < 3) {
+      //   console.log(`🔍 [Heatmap] Point ${index}:`, {
+      //     originalNaturalCoords: { x: point.x, y: point.y },
+      //     naturalDimensions: { width: imageWidth, height: imageHeight },
+      //     displayedDimensions: { width: imageRef.current!.offsetWidth, height: imageRef.current!.offsetHeight },
+      //     canvasDimensions: { width: canvas.width, height: canvas.height },
+      //     finalCanvasCoords: { x, y },
+      //     xRatio: point.x / imageWidth,
+      //     yRatio: point.y / imageHeight
+      //   })
+      // }
       
       // Draw point - even if outside canvas bounds (canvas will clip automatically)
       ctx.beginPath()
@@ -180,11 +180,11 @@ export function EyeTrackingResults({
     // Use gaze points if scan path is empty
     const pathData = (data.scanPath && data.scanPath.length > 0) ? data.scanPath : (data.gazePoints || [])
     console.log('Drawing scan path with', pathData.length, 'points')
-    console.log('Scan path data:', {
-      scanPathLength: data.scanPath?.length || 0,
-      gazePointsLength: data.gazePoints?.length || 0,
-      usingPathData: pathData === data.scanPath ? 'scanPath' : 'gazePoints'
-    })
+    // console.log('Scan path data:', {
+    //   scanPathLength: data.scanPath?.length || 0,
+    //   gazePointsLength: data.gazePoints?.length || 0,
+    //   usingPathData: pathData === data.scanPath ? 'scanPath' : 'gazePoints'
+    // })
 
     if (pathData.length < 2) {
       console.log('Not enough points for scan path')
@@ -212,34 +212,34 @@ export function EyeTrackingResults({
       const isFirstPoint = index === 0
       const isLastPoint = index === pathData.length - 1
       
-      if (isFirstPoint || isLastPoint || index < 3) {
-        console.log(`🔍 [Scanpath Results] Point ${index} (${isFirstPoint ? 'FIRST' : isLastPoint ? 'LAST' : 'early'}):`)
-        console.log('  Original natural coords (from stored data):', {
-          x: point.x,
-          y: point.y,
-          naturalXPercent: (point.x / imageWidth) * 100,
-          naturalYPercent: (point.y / imageHeight) * 100
-        })
-        console.log('  Natural image dimensions:', {
-          width: imageWidth,
-          height: imageHeight
-        })
-        console.log('  Displayed image size (in results view):', {
-          width: imageRef.current!.offsetWidth,
-          height: imageRef.current!.offsetHeight
-        })
-        console.log('  Canvas dimensions:', {
-          width: canvas.width,
-          height: canvas.height
-        })
-        console.log('  Final canvas coordinates (where point is drawn):', {
-          x: x,
-          y: y,
-          canvasXPercent: (x / canvas.width) * 100,
-          canvasYPercent: (y / canvas.height) * 100
-        })
-        console.log('  Expected: First should be ~middle, Last should be ~top-left')
-      }
+      // if (isFirstPoint || isLastPoint || index < 3) {
+      //   console.log(`🔍 [Scanpath Results] Point ${index} (${isFirstPoint ? 'FIRST' : isLastPoint ? 'LAST' : 'early'}):`)
+      //   console.log('  Original natural coords (from stored data):', {
+      //     x: point.x,
+      //     y: point.y,
+      //     naturalXPercent: (point.x / imageWidth) * 100,
+      //     naturalYPercent: (point.y / imageHeight) * 100
+      //   })
+      //   console.log('  Natural image dimensions:', {
+      //     width: imageWidth,
+      //     height: imageHeight
+      //   })
+      //   console.log('  Displayed image size (in results view):', {
+      //     width: imageRef.current!.offsetWidth,
+      //     height: imageRef.current!.offsetHeight
+      //   })
+      //   console.log('  Canvas dimensions:', {
+      //     width: canvas.width,
+      //     height: canvas.height
+      //   })
+      //   console.log('  Final canvas coordinates (where point is drawn):', {
+      //     x: x,
+      //     y: y,
+      //     canvasXPercent: (x / canvas.width) * 100,
+      //     canvasYPercent: (y / canvas.height) * 100
+      //   })
+      //   console.log('  Expected: First should be ~middle, Last should be ~top-left')
+      // }
       
       validPoints++
       if (firstPoint) {
@@ -347,15 +347,15 @@ export function EyeTrackingResults({
       return
     }
     
-    console.log('Tab or data changed:', activeTab)
-    console.log('Data available:', {
-      hasGazePoints: !!(data.gazePoints && data.gazePoints.length > 0),
-      gazePointsLength: data.gazePoints?.length || 0,
-      hasScanPath: !!(data.scanPath && data.scanPath.length > 0),
-      scanPathLength: data.scanPath?.length || 0,
-      hasFixationPoints: !!(data.fixationPoints && data.fixationPoints.length > 0),
-      fixationPointsLength: data.fixationPoints?.length || 0
-    })
+    // console.log('Tab or data changed:', activeTab)
+    // console.log('Data available:', {
+    //   hasGazePoints: !!(data.gazePoints && data.gazePoints.length > 0),
+    //   gazePointsLength: data.gazePoints?.length || 0,
+    //   hasScanPath: !!(data.scanPath && data.scanPath.length > 0),
+    //   scanPathLength: data.scanPath?.length || 0,
+    //   hasFixationPoints: !!(data.fixationPoints && data.fixationPoints.length > 0),
+    //   fixationPointsLength: data.fixationPoints?.length || 0
+    // })
     
     if (!canvasRef.current || !imageRef.current) {
       console.log('Canvas or image not ready, waiting...')
@@ -474,22 +474,22 @@ export function EyeTrackingResults({
     }
     
     // Log analysis to console for debugging
-    console.log('📊 [Coordinate Analysis] Gaze vs Image Bounds:', {
-      imageDimensions: { width: imageWidth, height: imageHeight },
-      gazeRange: analysis.gazeRange,
-      imageBounds: analysis.imageBounds,
-      outsideBounds: analysis.outsideBounds,
-      pointsOutside: analysis.pointsOutside,
-      summary: {
-        xRange: `${analysis.gazeRange.minX.toFixed(1)} to ${analysis.gazeRange.maxX.toFixed(1)} (image: 0 to ${imageWidth})`,
-        yRange: `${analysis.gazeRange.minY.toFixed(1)} to ${analysis.gazeRange.maxY.toFixed(1)} (image: 0 to ${imageHeight})`,
-        xOutside: analysis.outsideBounds.xLeft < 0 ? `${Math.abs(analysis.outsideBounds.xLeft).toFixed(1)}px left` : 
-                  analysis.outsideBounds.xRight > 0 ? `${analysis.outsideBounds.xRight.toFixed(1)}px right` : 'within bounds',
-        yOutside: analysis.outsideBounds.yTop < 0 ? `${Math.abs(analysis.outsideBounds.yTop).toFixed(1)}px top` :
-                  analysis.outsideBounds.yBottom > 0 ? `${analysis.outsideBounds.yBottom.toFixed(1)}px bottom` : 'within bounds',
-        percentageOutside: `${analysis.pointsOutside.percentageBoth.toFixed(1)}%`
-      }
-    })
+    // console.log('📊 [Coordinate Analysis] Gaze vs Image Bounds:', {
+    //   imageDimensions: { width: imageWidth, height: imageHeight },
+    //   gazeRange: analysis.gazeRange,
+    //   imageBounds: analysis.imageBounds,
+    //   outsideBounds: analysis.outsideBounds,
+    //   pointsOutside: analysis.pointsOutside,
+    //   summary: {
+    //     xRange: `${analysis.gazeRange.minX.toFixed(1)} to ${analysis.gazeRange.maxX.toFixed(1)} (image: 0 to ${imageWidth})`,
+    //     yRange: `${analysis.gazeRange.minY.toFixed(1)} to ${analysis.gazeRange.maxY.toFixed(1)} (image: 0 to ${imageHeight})`,
+    //     xOutside: analysis.outsideBounds.xLeft < 0 ? `${Math.abs(analysis.outsideBounds.xLeft).toFixed(1)}px left` : 
+    //               analysis.outsideBounds.xRight > 0 ? `${analysis.outsideBounds.xRight.toFixed(1)}px right` : 'within bounds',
+    //     yOutside: analysis.outsideBounds.yTop < 0 ? `${Math.abs(analysis.outsideBounds.yTop).toFixed(1)}px top` :
+    //               analysis.outsideBounds.yBottom > 0 ? `${analysis.outsideBounds.yBottom.toFixed(1)}px bottom` : 'within bounds',
+    //     percentageOutside: `${analysis.pointsOutside.percentageBoth.toFixed(1)}%`
+    //   }
+    // })
     
     return analysis
   })()

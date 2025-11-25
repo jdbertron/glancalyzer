@@ -11,6 +11,7 @@ import {
   ArrowRight,
   Info
 } from 'lucide-react'
+import { AdBanner } from '../components/ads'
 
 interface TipSection {
   id: string
@@ -240,6 +241,11 @@ export function EyeTrackingTips() {
                 </button>
               ))}
             </nav>
+          </div>
+          
+          {/* Sidebar Ad - below categories */}
+          <div className="mt-6 hidden lg:block">
+            <AdBanner slot="tipsSidebar" showLabel={true} />
           </div>
         </div>
 

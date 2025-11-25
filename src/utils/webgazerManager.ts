@@ -214,7 +214,7 @@ class WebGazerManager {
             // Collect calibration data if calibrating
             if (this.isCalibrating) {
               this.calibrationData.push(gazePoint)
-              console.log(`🔍 [WebGazerManager] Calibration point #${this.calibrationData.length}: (${Math.round(data.x)}, ${Math.round(data.y)})`)
+              // console.log(`🔍 [WebGazerManager] Calibration point #${this.calibrationData.length}: (${Math.round(data.x)}, ${Math.round(data.y)})`)
             }
 
             // Collect experiment data if tracking
@@ -248,7 +248,9 @@ class WebGazerManager {
       // Control face overlay and feedback box based on debug mode
       wg.params.showFaceOverlay = this.debugMode
       wg.params.showFaceFeedbackBox = this.debugMode
-      wg.params.frameSkipRate = 2; // For 30fps (every other frame)
+      wg.params.frameSkipRate = 4; // For 30fps (every other frame)
+      wg.params.trackEye = 'both';
+      wg.params.enableBlinkDetection = true;
       
       // Clear storage right before begin() if we need to start fresh
       // This prevents WebGazer from loading old calibration data during begin()
@@ -431,6 +433,13 @@ class WebGazerManager {
     console.log('🎯 [WebGazerManager] Starting point-based calibration (9-point grid)...')
     this.isCalibrating = true
     this.calibrationData = []
+
+    // Disable saveDataAcrossSessions during calibration to avoid blocking IndexedDB writes on each click
+    // Will be re-enabled right before the final click to save calibration data
+    if (this.webgazer) {
+      this.webgazer.saveDataAcrossSessions(false)
+      console.log('💾 [WebGazerManager] Disabled saveDataAcrossSessions during calibration to prevent blocking')
+    }
 
     // Ensure mouse tracking remains disabled (prevents model recalculation)
     // The calibration model should be frozen and not continuously updated
@@ -617,20 +626,26 @@ class WebGazerManager {
       let coefficientInfo: any = null
       
       if (wgAny.ridge?.regression?.beta && Array.isArray(wgAny.ridge.regression.beta) && wgAny.ridge.regression.beta.length > 0) {
+        // Avoid JSON.stringify on large arrays - compute hash more efficiently
+        const beta = wgAny.ridge.regression.beta
+        const hash = beta.length > 0 ? `${beta[0]}-${beta[Math.floor(beta.length / 2)]}-${beta[beta.length - 1]}-${beta.length}` : 'empty'
         coefficientInfo = {
           source: 'ridge.regression.beta',
-          count: wgAny.ridge.regression.beta.length,
-          firstFew: wgAny.ridge.regression.beta.slice(0, 5),
-          lastFew: wgAny.ridge.regression.beta.slice(-5),
-          hash: JSON.stringify(wgAny.ridge.regression.beta).substring(0, 50) // First 50 chars for comparison
+          count: beta.length,
+          firstFew: beta.slice(0, 5),
+          lastFew: beta.slice(-5),
+          hash: hash // Use efficient hash instead of JSON.stringify
         }
       } else if (wgAny.ridge?.beta && Array.isArray(wgAny.ridge.beta) && wgAny.ridge.beta.length > 0) {
+        // Avoid JSON.stringify on large arrays - compute hash more efficiently
+        const beta = wgAny.ridge.beta
+        const hash = beta.length > 0 ? `${beta[0]}-${beta[Math.floor(beta.length / 2)]}-${beta[beta.length - 1]}-${beta.length}` : 'empty'
         coefficientInfo = {
           source: 'ridge.beta',
-          count: wgAny.ridge.beta.length,
-          firstFew: wgAny.ridge.beta.slice(0, 5),
-          lastFew: wgAny.ridge.beta.slice(-5),
-          hash: JSON.stringify(wgAny.ridge.beta).substring(0, 50)
+          count: beta.length,
+          firstFew: beta.slice(0, 5),
+          lastFew: beta.slice(-5),
+          hash: hash // Use efficient hash instead of JSON.stringify
         }
       }
       
@@ -919,6 +934,15 @@ class WebGazerManager {
   // Get Kalman filter state
   getKalmanFilter(): boolean {
     return this.kalmanFilterEnabled
+  }
+
+  // Set saveDataAcrossSessions
+  setSaveDataAcrossSessions(enabled: boolean): void {
+    console.log(`🔧 [WebGazerManager] saveDataAcrossSessions ${enabled ? 'enabled' : 'disabled'}`)
+    
+    if (this.webgazer) {
+      this.webgazer.saveDataAcrossSessions(enabled)
+    }
   }
 
   // ============================================================================

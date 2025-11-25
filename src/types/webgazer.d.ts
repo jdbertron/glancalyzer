@@ -6,6 +6,7 @@ declare module 'webgazer' {
   }
 
   interface WebGazerParams {
+    enableBlinkDetection: boolean
     moveTickSize: number
     trackMouseMovements: boolean
     dataWindow: number

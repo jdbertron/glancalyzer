@@ -5,6 +5,7 @@ import { useAuth } from '../hooks/useAuth'
 import { Upload as UploadIcon, X, Image as ImageIcon, AlertCircle, Eye, BarChart3 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
+import { AdBanner } from '../components/ads'
 
 export function Upload() {
   const [dragActive, setDragActive] = useState(false)
@@ -442,6 +443,11 @@ export function Upload() {
             </p>
           </div>
         )}
+        
+        {/* Advertisement - Bottom of upload section */}
+        <div className="mt-8">
+          <AdBanner slot="uploadPageBottom" className="max-w-2xl mx-auto" />
+        </div>
       </div>
 
     </div>

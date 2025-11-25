@@ -393,6 +393,14 @@ export function EyeTrackingExperiment() {
     const currentClicks = clicksPerPoint.get(pointIndex) || 0
     const newClicks = currentClicks + 1
     
+    // Re-enable saveDataAcrossSessions right before the final click so the last click saves the data
+    // This prevents blocking IndexedDB writes during calibration while ensuring data is saved at the end
+    // Check if this is the last point that needs to be completed, and if so, re-enable before its final click
+    if (allOtherPointsCompleted && currentClicks === EYE_TRACKING_EXPERIMENT.CLICKS_PER_CALIBRATION_POINT - 1) {
+      webgazerManager.setSaveDataAcrossSessions(true)
+      console.log('💾 [EyeTrackingExperiment] Re-enabled saveDataAcrossSessions before final click to save calibration data')
+    }
+    
     // Update last clicked point index
     setLastClickedPointIndex(pointIndex)
     
@@ -814,34 +822,14 @@ export function EyeTrackingExperiment() {
         // Navigate to experiment details page to view results
         navigate(`/experiments/${experimentId}`)
       } catch (saveError) {
-        // Handle save errors gracefully - results are still available and displayed
-        const errorMessage = saveError instanceof Error ? saveError.message : String(saveError)
+        console.error('❌ [React] Failed to save experiment:', saveError)
+        const errorMessage = saveError instanceof Error ? saveError.message : 'Unknown error'
         
-        // Show informative message - use warning style for non-critical issues
+        // Show warning but still display results
         if (errorMessage.includes('limit reached')) {
-          toast('Experiment limit reached. Your results are displayed below but were not saved.', {
-            duration: 5000,
-            style: {
-              background: '#FEF3C7',
-              color: '#92400E',
-            },
-          })
-        } else if (errorMessage.includes('not authorized') || errorMessage.includes('authorized')) {
-          toast('Unable to save experiment. Your results are displayed below.', {
-            duration: 5000,
-            style: {
-              background: '#FEF3C7',
-              color: '#92400E',
-            },
-          })
+          toast.error('Experiment limit reached. Results are shown below but not saved.')
         } else {
-          toast('Unable to save experiment to your account. Your results are displayed below.', {
-            duration: 5000,
-            style: {
-              background: '#FEF3C7',
-              color: '#92400E',
-            },
-          })
+          toast.error('Failed to save experiment results. Results are shown below.')
         }
         
         // Show results inline since we couldn't save/navigate
@@ -852,24 +840,12 @@ export function EyeTrackingExperiment() {
       await webgazerManager.stopWebcam()
       
     } catch (error) {
-      // Only log as error if we truly failed to process (no results available)
-      const errorMessage = error instanceof Error ? error.message : String(error)
+      console.error('❌ [React] Failed to process experiment:', error)
+      toast.error('Failed to process experiment results.')
       
-      // If we have results, this is not a critical failure
+      // If we have results, still show them even if processing failed
       if (experimentResults) {
-        console.warn('⚠️ [React] Processing completed with warnings:', errorMessage)
-        toast('Experiment completed with some issues. Results are displayed below.', {
-          duration: 4000,
-          style: {
-            background: '#FEF3C7',
-            color: '#92400E',
-          },
-        })
         setShowResults(true)
-      } else {
-        // True failure - no results available
-        console.error('❌ [React] Failed to process experiment:', error)
-        toast.error('Failed to process experiment results. Please try again.')
       }
       
       // Stop webcam even if processing failed
