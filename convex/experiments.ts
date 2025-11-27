@@ -49,6 +49,130 @@ function calculateRefilledAllotment(
   return newAllotment;
 }
 
+/**
+ * Get experiment allotment information for a user or anonymous visitor.
+ * Used to show friendly status messages and disable buttons when at limit.
+ */
+export const getExperimentAllotmentInfo = query({
+  args: {
+    userId: v.optional(v.id("users")),
+    ipAddress: v.optional(v.string()),
+  },
+  returns: v.object({
+    canRunExperiment: v.boolean(),
+    currentAllotment: v.number(),
+    maxAllotment: v.number(),
+    hoursUntilNextExperiment: v.optional(v.number()),
+    tier: v.string(),
+    isRegistered: v.boolean(),
+    tierLabel: v.string(),
+    refillRate: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    // Check for registered user
+    if (args.userId) {
+      const user = await ctx.db.get(args.userId);
+      if (!user) {
+        return {
+          canRunExperiment: false,
+          currentAllotment: 0,
+          maxAllotment: 0,
+          hoursUntilNextExperiment: undefined,
+          tier: "unknown",
+          isRegistered: false,
+          tierLabel: "Unknown",
+          refillRate: "",
+        };
+      }
+
+      const tierConfig = TIER_CONFIG[user.membershipTier as keyof typeof TIER_CONFIG] || TIER_CONFIG.free;
+      const currentStoredAllotment = user.experimentAllotment ?? tierConfig.maxAllotment;
+      const refilledAllotment = calculateRefilledAllotment(
+        currentStoredAllotment,
+        user.lastExperimentAt,
+        tierConfig
+      );
+
+      const canRun = refilledAllotment >= 1;
+      let hoursUntilNext: number | undefined = undefined;
+      if (!canRun) {
+        hoursUntilNext = ((1 - refilledAllotment) / tierConfig.refillPerDay) * 24;
+      }
+
+      const tierLabels: Record<string, string> = {
+        free: "Free",
+        premium: "Premium",
+        professional: "Professional",
+      };
+
+      const refillRates: Record<string, string> = {
+        free: "3 per week",
+        premium: "100 per month",
+        professional: "500 per month",
+      };
+
+      return {
+        canRunExperiment: canRun,
+        currentAllotment: Math.floor(refilledAllotment),
+        maxAllotment: tierConfig.maxAllotment,
+        hoursUntilNextExperiment: hoursUntilNext,
+        tier: user.membershipTier || "free",
+        isRegistered: true,
+        tierLabel: tierLabels[user.membershipTier || "free"] || "Free",
+        refillRate: refillRates[user.membershipTier || "free"] || "3 per week",
+      };
+    }
+
+    // Check for anonymous user (by IP)
+    if (args.ipAddress) {
+      const limitRecord = await ctx.db
+        .query("anonymousExperimentLimits")
+        .withIndex("by_ip", (q) => q.eq("ipAddress", args.ipAddress!))
+        .first();
+
+      let refilledAllotment = ANONYMOUS_CONFIG.maxAllotment;
+      if (limitRecord) {
+        refilledAllotment = calculateRefilledAllotment(
+          limitRecord.experimentAllotment,
+          limitRecord.lastExperimentAt,
+          ANONYMOUS_CONFIG
+        );
+      }
+
+      const canRun = refilledAllotment >= 1;
+      let hoursUntilNext: number | undefined = undefined;
+      if (!canRun) {
+        const daysUntilNext = (1 - refilledAllotment) / ANONYMOUS_CONFIG.refillPerDay;
+        hoursUntilNext = daysUntilNext * 24;
+      }
+
+      return {
+        canRunExperiment: canRun,
+        currentAllotment: Math.floor(refilledAllotment),
+        maxAllotment: ANONYMOUS_CONFIG.maxAllotment,
+        hoursUntilNextExperiment: hoursUntilNext,
+        tier: "anonymous",
+        isRegistered: false,
+        tierLabel: "Guest",
+        refillRate: "5 per month",
+      };
+    }
+
+    // No user ID or IP - assume new anonymous user with full allotment
+    return {
+      canRunExperiment: true,
+      currentAllotment: ANONYMOUS_CONFIG.maxAllotment,
+      maxAllotment: ANONYMOUS_CONFIG.maxAllotment,
+      hoursUntilNextExperiment: undefined,
+      tier: "anonymous",
+      isRegistered: false,
+      tierLabel: "Guest",
+      refillRate: "5 per month",
+    };
+  },
+});
+
+
 // Create a new experiment
 export const createExperiment = mutation({
   args: {

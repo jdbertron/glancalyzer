@@ -1,9 +1,9 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useMutation, useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { useAuth } from '../hooks/useAuth'
-import { Upload as UploadIcon, X, Image as ImageIcon, AlertCircle, Eye, BarChart3 } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { Upload as UploadIcon, X, Image as ImageIcon, Eye, BarChart3, Clock, Sparkles, UserPlus } from 'lucide-react'
+import { useNavigate, Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { AdBanner } from '../components/ads'
 
@@ -13,15 +13,36 @@ export function Upload() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [uploadedPictureId, setUploadedPictureId] = useState<string | null>(null)
   const [showSuccess, setShowSuccess] = useState(false)
+  const [clientIP, setClientIP] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
   const { user, userId } = useAuth()
 
+  // Get client IP on mount for anonymous limit checking
+  useEffect(() => {
+    const fetchIP = async () => {
+      try {
+        const response = await fetch('https://api.ipify.org?format=json')
+        const data = await response.json()
+        setClientIP(data.ip || 'unknown')
+      } catch {
+        setClientIP('unknown')
+      }
+    }
+    if (!userId) {
+      fetchIP()
+    }
+  }, [userId])
+
   const generateUploadUrl = useMutation(api.pictures.generateUploadUrl)
   const uploadPicture = useMutation(api.pictures.uploadPicture)
-  const canUserUpload = useQuery(api.authUtils.canUserUpload, 
-    userId ? { userId } : { ipAddress: 'anonymous' } // Allow anonymous uploads
+  
+  // Check experiment allotment (this is what really matters - can they run experiments?)
+  const experimentAllotment = useQuery(
+    api.experiments.getExperimentAllotmentInfo,
+    userId ? { userId } : clientIP ? { ipAddress: clientIP } : 'skip'
   )
+  
   const uploadedPicture = useQuery(api.pictures.getPicture, 
     uploadedPictureId ? { pictureId: uploadedPictureId as any } : 'skip'
   )
@@ -99,9 +120,9 @@ export function Upload() {
   }
 
   const handleUpload = async () => {
-    console.log('handleUpload called:', { uploadedFile: !!uploadedFile, canUserUpload })
-    if (!uploadedFile || !canUserUpload?.canUpload) {
-      console.log('Upload blocked:', { uploadedFile: !!uploadedFile, canUserUpload })
+    console.log('handleUpload called:', { uploadedFile: !!uploadedFile, canProceed })
+    if (!uploadedFile || isAtLimit) {
+      console.log('Upload blocked:', { uploadedFile: !!uploadedFile, isAtLimit })
       return
     }
 
@@ -172,7 +193,8 @@ export function Upload() {
     }
   }
 
-  if (!canUserUpload) {
+  // Loading state
+  if (experimentAllotment === undefined) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
@@ -180,84 +202,17 @@ export function Upload() {
     )
   }
 
-  // If Convex is not responding, show upload form anyway
-  if (canUserUpload === undefined) {
-    return (
-      <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-3xl mx-auto">
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 mb-4">
-              Upload Your Image
-            </h1>
-            <p className="text-lg text-gray-600">
-              Upload an image to start running AI experiments
-            </p>
-          </div>
+  // Determine if user can proceed (has experiment allotment)
+  const canProceed = experimentAllotment?.canRunExperiment ?? true
+  const isAtLimit = !canProceed
 
-          <div className="card">
-            <div className="card-content">
-              <div className="border-2 border-dashed rounded-lg p-8 text-center border-gray-300">
-                <UploadIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  Drop your image here
-                </h3>
-                <p className="text-gray-600 mb-4">
-                  or click to browse files
-                </p>
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="btn btn-primary"
-                >
-                  Choose File
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".jpg,.jpeg,.png,image/jpeg,image/png"
-                  onChange={handleFileInput}
-                  className="hidden"
-                />
-                <p className="text-sm text-gray-500 mt-4">
-                  Supports JPG and PNG images up to 10MB
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  if (!canUserUpload.canUpload) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-md w-full">
-          <div className="text-center">
-            <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">
-              Upload Limit Reached
-            </h2>
-            <p className="text-gray-600 mb-6">
-              {canUserUpload.reason}
-            </p>
-            {!user && (
-              <div className="space-y-4">
-                <p className="text-sm text-gray-500">
-                  Register for a free account to get 3 experiments per week!
-                </p>
-                <a
-                  href="/register"
-                  className="btn btn-primary btn-lg w-full"
-                >
-                  Create Account
-                </a>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    )
+  // Helper to format time until next experiment
+  const formatTimeUntil = (hours: number | undefined) => {
+    if (!hours) return ''
+    if (hours < 1) return 'less than an hour'
+    if (hours < 24) return `about ${Math.ceil(hours)} hour${Math.ceil(hours) !== 1 ? 's' : ''}`
+    const days = Math.ceil(hours / 24)
+    return `about ${days} day${days !== 1 ? 's' : ''}`
   }
 
   return (
@@ -270,10 +225,80 @@ export function Upload() {
           <p className="text-lg text-gray-600">
             {showSuccess 
               ? 'Choose how you want to analyze your uploaded image'
-              : 'Upload an image to start running AI experiments'
+              : 'Upload an image to start eye tracking analysis'
             }
           </p>
         </div>
+
+        {/* Experiment Allotment Info Panel */}
+        {experimentAllotment && !showSuccess && (
+          <div className={`mb-6 rounded-lg p-4 ${
+            isAtLimit 
+              ? 'bg-amber-50 border border-amber-200' 
+              : 'bg-blue-50 border border-blue-200'
+          }`}>
+            <div className="flex items-start space-x-3">
+              {isAtLimit ? (
+                <Clock className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+              ) : (
+                <Sparkles className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+              )}
+              <div className="flex-1">
+                {isAtLimit ? (
+                  <>
+                    <h3 className="font-medium text-amber-800">
+                      You've used all your experiments for now
+                    </h3>
+                    <p className="text-sm text-amber-700 mt-1">
+                      Your next experiment will be available in {formatTimeUntil(experimentAllotment.hoursUntilNextExperiment)}.
+                      {!experimentAllotment.isRegistered && (
+                        <> Create a free account to get more experiments!</>
+                      )}
+                    </p>
+                    {!experimentAllotment.isRegistered && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Link
+                          to="/register"
+                          className="inline-flex items-center px-3 py-1.5 bg-amber-600 text-white text-sm font-medium rounded-md hover:bg-amber-700 transition-colors"
+                        >
+                          <UserPlus className="h-4 w-4 mr-1.5" />
+                          Sign Up Free
+                        </Link>
+                        <span className="text-xs text-amber-600 self-center">
+                          Get 3 experiments per week!
+                        </span>
+                      </div>
+                    )}
+                    {experimentAllotment.isRegistered && experimentAllotment.tier === 'free' && (
+                      <div className="mt-3">
+                        <Link
+                          to="/profile"
+                          className="text-sm text-amber-700 hover:text-amber-800 underline"
+                        >
+                          Upgrade to Premium for 100 experiments/month →
+                        </Link>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <h3 className="font-medium text-blue-800">
+                      {experimentAllotment.currentAllotment} experiment{experimentAllotment.currentAllotment !== 1 ? 's' : ''} available
+                    </h3>
+                    <p className="text-sm text-blue-700 mt-1">
+                      {experimentAllotment.tierLabel} tier • {experimentAllotment.refillRate}
+                      {!experimentAllotment.isRegistered && (
+                        <span className="ml-2">
+                          • <Link to="/register" className="underline hover:text-blue-800">Sign up</Link> for more!
+                        </span>
+                      )}
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="card">
           <div className="card-content">
@@ -362,28 +387,31 @@ export function Upload() {
             ) : !uploadedFile ? (
               <div
                 className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-                  dragActive
-                    ? 'border-primary-500 bg-primary-50'
-                    : 'border-gray-300 hover:border-gray-400'
+                  isAtLimit
+                    ? 'border-gray-200 bg-gray-50'
+                    : dragActive
+                      ? 'border-primary-500 bg-primary-50'
+                      : 'border-gray-300 hover:border-gray-400'
                 }`}
-                onDragEnter={handleDrag}
-                onDragLeave={handleDrag}
-                onDragOver={handleDrag}
-                onDrop={handleDrop}
+                onDragEnter={isAtLimit ? undefined : handleDrag}
+                onDragLeave={isAtLimit ? undefined : handleDrag}
+                onDragOver={isAtLimit ? undefined : handleDrag}
+                onDrop={isAtLimit ? undefined : handleDrop}
               >
-                <UploadIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  Drop your image here
+                <UploadIcon className={`h-12 w-12 mx-auto mb-4 ${isAtLimit ? 'text-gray-300' : 'text-gray-400'}`} />
+                <h3 className={`text-lg font-medium mb-2 ${isAtLimit ? 'text-gray-400' : 'text-gray-900'}`}>
+                  {isAtLimit ? 'Upload paused' : 'Drop your image here'}
                 </h3>
-                <p className="text-gray-600 mb-4">
-                  or click to browse files
+                <p className={`mb-4 ${isAtLimit ? 'text-gray-400' : 'text-gray-600'}`}>
+                  {isAtLimit ? 'Check back soon when your experiments refresh' : 'or click to browse files'}
                 </p>
                 <button
                   type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="btn btn-primary"
+                  onClick={() => !isAtLimit && fileInputRef.current?.click()}
+                  disabled={isAtLimit}
+                  className={`btn ${isAtLimit ? 'btn-outline opacity-50 cursor-not-allowed' : 'btn-primary'}`}
                 >
-                  Choose File
+                  {isAtLimit ? 'Come Back Later' : 'Choose File'}
                 </button>
                 <input
                   ref={fileInputRef}
@@ -391,6 +419,7 @@ export function Upload() {
                   accept=".jpg,.jpeg,.png,image/jpeg,image/png"
                   onChange={handleFileInput}
                   className="hidden"
+                  disabled={isAtLimit}
                 />
                 <p className="text-sm text-gray-500 mt-4">
                   Supports JPG and PNG images up to 10MB
@@ -419,10 +448,10 @@ export function Upload() {
                 <div className="flex space-x-4">
                   <button
                     onClick={handleUpload}
-                    disabled={uploading}
-                    className="btn btn-primary flex-1"
+                    disabled={uploading || isAtLimit}
+                    className={`btn flex-1 ${isAtLimit ? 'btn-outline opacity-50 cursor-not-allowed' : 'btn-primary'}`}
                   >
-                    {uploading ? 'Uploading...' : 'Upload Image'}
+                    {uploading ? 'Uploading...' : isAtLimit ? 'Experiment Limit Reached' : 'Upload Image'}
                   </button>
                   <button
                     onClick={removeFile}
@@ -436,13 +465,6 @@ export function Upload() {
           </div>
         </div>
 
-        {canUserUpload.remainingUploads > 0 && (
-          <div className="mt-6 text-center">
-            <p className="text-sm text-gray-600">
-              {canUserUpload.remainingUploads} upload{canUserUpload.remainingUploads !== 1 ? 's' : ''} remaining
-            </p>
-          </div>
-        )}
         
         {/* Advertisement - Bottom of upload section */}
         <div className="mt-8">
