@@ -12,8 +12,8 @@ export function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center">
             <h1 className="text-4xl md:text-6xl font-bold text-gray-900 mb-6">
-              Track Visual Attention with{' '}
-              <span className="text-primary-600">Eye Tracking</span>
+              Watch the gaze, perfect the frame:{' '}
+              <span className="text-primary-600 whitespace-nowrap">Eye Tracking for Artists</span>
             </h1>
             <p className="text-xl text-gray-600 mb-8 max-w-3xl mx-auto">
               Upload your images and discover where people look first, how they scan content, 
@@ -68,8 +68,8 @@ export function Home() {
                 AI Experiments
               </h3>
               <p className="text-gray-600">
-                Run various AI experiments on your images including object detection, 
-                sentiment analysis, and more.
+                Run various AI experiments on your images including heatmap, 
+                eye tracking and focus detection.
               </p>
             </div>
 
@@ -112,7 +112,7 @@ export function Home() {
                 <ul className="space-y-2">
                   <li className="flex items-center">
                     <Zap className="h-4 w-4 text-green-500 mr-2" />
-                    5 experiments per month
+                    3 experiments per week
                   </li>
                   <li className="flex items-center">
                     <Zap className="h-4 w-4 text-green-500 mr-2" />
@@ -120,7 +120,7 @@ export function Home() {
                   </li>
                   <li className="flex items-center">
                     <Zap className="h-4 w-4 text-green-500 mr-2" />
-                    Basic AI analysis
+                    Eye tracking analysis
                   </li>
                 </ul>
               </div>
@@ -129,14 +129,14 @@ export function Home() {
             <div className="card border-primary-200 ring-2 ring-primary-100">
               <div className="card-header">
                 <h3 className="card-title">Premium</h3>
-                <p className="card-description">For serious users</p>
-                <div className="text-3xl font-bold">$29<span className="text-lg font-normal">/month</span></div>
+                <p className="card-description">For serious artists</p>
+                <div className="text-3xl font-bold">$2.99<span className="text-lg font-normal">/month</span></div>
               </div>
               <div className="card-content">
                 <ul className="space-y-2">
                   <li className="flex items-center">
                     <Zap className="h-4 w-4 text-green-500 mr-2" />
-                    200 experiments per month
+                    100 experiments per month
                   </li>
                   <li className="flex items-center">
                     <Zap className="h-4 w-4 text-green-500 mr-2" />
@@ -144,32 +144,39 @@ export function Home() {
                   </li>
                   <li className="flex items-center">
                     <Zap className="h-4 w-4 text-green-500 mr-2" />
-                    Advanced AI analysis
+                    Eye tracking analysis
                   </li>
+                  {/* Future features - uncomment when available:
                   <li className="flex items-center">
                     <Zap className="h-4 w-4 text-green-500 mr-2" />
-                    Priority processing
+                    Advanced AI analysis
                   </li>
+                  */}
                 </ul>
               </div>
             </div>
 
             <div className="card">
               <div className="card-header">
-                <h3 className="card-title">Enterprise</h3>
-                <p className="card-description">For organizations</p>
-                <div className="text-3xl font-bold">$99<span className="text-lg font-normal">/month</span></div>
+                <h3 className="card-title">Professional</h3>
+                <p className="card-description">For teachers and art schools</p>
+                <div className="text-3xl font-bold">$30<span className="text-lg font-normal">/month</span></div>
               </div>
               <div className="card-content">
                 <ul className="space-y-2">
                   <li className="flex items-center">
                     <Zap className="h-4 w-4 text-green-500 mr-2" />
-                    1000 experiments per month
+                    500 experiments per month
                   </li>
                   <li className="flex items-center">
                     <Zap className="h-4 w-4 text-green-500 mr-2" />
                     Unlimited image retention
                   </li>
+                  <li className="flex items-center">
+                    <Zap className="h-4 w-4 text-green-500 mr-2" />
+                    Eye tracking analysis
+                  </li>
+                  {/* Future features - uncomment when available:
                   <li className="flex items-center">
                     <Zap className="h-4 w-4 text-green-500 mr-2" />
                     All AI analysis features
@@ -182,6 +189,7 @@ export function Home() {
                     <Zap className="h-4 w-4 text-green-500 mr-2" />
                     Priority support
                   </li>
+                  */}
                 </ul>
               </div>
             </div>
@@ -196,7 +204,7 @@ export function Home() {
             Ready to analyze your images?
           </h2>
           <p className="text-xl text-primary-100 mb-8">
-            Join thousands of users already using Gazalyzer
+            Join hundreds of users already using Don't Blink Art
           </p>
           <Link to="/upload" className="btn bg-white text-primary-600 hover:bg-gray-100 btn-lg">
             Try It Now (No Signup Required)

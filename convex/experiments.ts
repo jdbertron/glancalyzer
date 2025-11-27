@@ -2,11 +2,59 @@ import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
 
+// Token bucket configuration for experiment rate limiting
+// Each tier has a maximum allotment and a refill rate (experiments per day)
+// Tiers must match schema.ts: free, premium, professional
+const TIER_CONFIG = {
+  free: { maxAllotment: 3, refillPerDay: 3 / 7 },              // 3 max, ~0.43/day (3/week)
+  premium: { maxAllotment: 100, refillPerDay: 100 / 30 },      // 100 max, ~3.33/day (100/month)
+  professional: { maxAllotment: 500, refillPerDay: 500 / 30 }, // 500 max, ~16.67/day (500/month)
+} as const;
+
+// Configuration for unregistered/anonymous users (tracked by IP)
+const ANONYMOUS_CONFIG = {
+  maxAllotment: 5,
+  refillPerDay: 5 / 30,  // 5 per month ≈ 0.167/day
+};
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * Calculate the refilled allotment based on time elapsed since last experiment.
+ * Uses token bucket algorithm: allotment refills over time up to a maximum.
+ */
+function calculateRefilledAllotment(
+  currentAllotment: number,
+  lastExperimentAt: number | undefined,
+  tierConfig: { maxAllotment: number; refillPerDay: number }
+): number {
+  // If no previous experiment, user should have full allotment
+  if (!lastExperimentAt) {
+    return tierConfig.maxAllotment;
+  }
+
+  const now = Date.now();
+  const elapsedMs = now - lastExperimentAt;
+  const elapsedDays = elapsedMs / MS_PER_DAY;
+  
+  // Calculate refilled amount
+  const refillAmount = elapsedDays * tierConfig.refillPerDay;
+  
+  // Add refill to current allotment, cap at max
+  const newAllotment = Math.min(
+    currentAllotment + refillAmount,
+    tierConfig.maxAllotment
+  );
+  
+  return newAllotment;
+}
+
 // Create a new experiment
 export const createExperiment = mutation({
   args: {
     pictureId: v.id("pictures"),
     userId: v.optional(v.id("users")),
+    ipAddress: v.optional(v.string()), // For anonymous user rate limiting
     experimentType: v.string(),
     parameters: v.optional(v.any()),
   },
@@ -58,31 +106,82 @@ export const createExperiment = mutation({
       throw new Error("Not authorized to create experiments on this picture");
     }
 
-    // Check membership limits for registered users
+    // Check membership limits for registered users using token bucket algorithm
     if (args.userId) {
       const user = await ctx.db.get(args.userId);
       if (!user) {
         throw new Error("User not found");
       }
 
-      // Get user's current experiment count
-      const userExperiments = await ctx.db
-        .query("experiments")
-        .withIndex("by_user", (q) => q.eq("userId", args.userId))
-        .collect();
+      // Get tier configuration (default to free if tier not found)
+      const tierConfig = TIER_CONFIG[user.membershipTier as keyof typeof TIER_CONFIG] || TIER_CONFIG.free;
+      
+      // Calculate current allotment with refill based on time since last experiment
+      // Handle existing users who don't have experimentAllotment yet
+      const currentStoredAllotment = user.experimentAllotment ?? tierConfig.maxAllotment;
+      const refilledAllotment = calculateRefilledAllotment(
+        currentStoredAllotment,
+        user.lastExperimentAt,
+        tierConfig
+      );
 
-      const currentCount = userExperiments.length;
+      console.log(`🎯 [${callId}] Allotment check:`, {
+        tier: user.membershipTier,
+        storedAllotment: currentStoredAllotment,
+        lastExperimentAt: user.lastExperimentAt ? new Date(user.lastExperimentAt).toISOString() : 'never',
+        refilledAllotment: refilledAllotment.toFixed(2),
+        maxAllotment: tierConfig.maxAllotment,
+        refillPerDay: tierConfig.refillPerDay,
+      });
 
-      // Check membership tier limits
-      const tierLimits = {
-        free: 5,
-        basic: 50,
-        premium: 200,
-        enterprise: 1000,
-      };
+      // Check if user has enough allotment (need at least 1)
+      if (refilledAllotment < 1) {
+        const hoursUntilNextExperiment = ((1 - refilledAllotment) / tierConfig.refillPerDay) * 24;
+        throw new Error(
+          `Experiment limit reached. You'll have another experiment available in about ${Math.ceil(hoursUntilNextExperiment)} hour(s). ` +
+          `Upgrade your plan for more experiments!`
+        );
+      }
+    }
 
-      if (currentCount >= tierLimits[user.membershipTier]) {
-        throw new Error(`Experiment limit reached for ${user.membershipTier} tier`);
+    // Check limits for anonymous/unregistered users (tracked by IP)
+    // This is a best-effort approach - can be bypassed with VPN/new IP, but provides basic limiting
+    let anonymousLimitRecord = null;
+    let anonymousRefilledAllotment = ANONYMOUS_CONFIG.maxAllotment;
+    
+    if (!args.userId && args.ipAddress) {
+      // Look up existing limit record for this IP
+      anonymousLimitRecord = await ctx.db
+        .query("anonymousExperimentLimits")
+        .withIndex("by_ip", (q) => q.eq("ipAddress", args.ipAddress!))
+        .first();
+
+      if (anonymousLimitRecord) {
+        // Calculate refilled allotment based on time since last experiment
+        anonymousRefilledAllotment = calculateRefilledAllotment(
+          anonymousLimitRecord.experimentAllotment,
+          anonymousLimitRecord.lastExperimentAt,
+          ANONYMOUS_CONFIG
+        );
+      }
+      // If no record exists, user gets full allotment (handled by default value above)
+
+      console.log(`🎯 [${callId}] Anonymous allotment check:`, {
+        ipAddress: args.ipAddress,
+        hasExistingRecord: !!anonymousLimitRecord,
+        refilledAllotment: anonymousRefilledAllotment.toFixed(2),
+        maxAllotment: ANONYMOUS_CONFIG.maxAllotment,
+        refillPerDay: ANONYMOUS_CONFIG.refillPerDay,
+      });
+
+      // Check if anonymous user has enough allotment
+      if (anonymousRefilledAllotment < 1) {
+        const daysUntilNextExperiment = (1 - anonymousRefilledAllotment) / ANONYMOUS_CONFIG.refillPerDay;
+        throw new Error(
+          `You've reached the limit for unregistered users (5 experiments per month). ` +
+          `You'll have another experiment available in about ${Math.ceil(daysUntilNextExperiment)} day(s). ` +
+          `Register for free to get 3 experiments per week!`
+        );
       }
     }
 
@@ -98,12 +197,58 @@ export const createExperiment = mutation({
     
     console.log(`✅ [${callId}] Experiment inserted with ID:`, experimentId)
 
-    // Update user's experiment count
+    // Update user's experiment count and allotment
     if (args.userId) {
       const user = await ctx.db.get(args.userId);
       if (user) {
+        // Get tier configuration
+        const tierConfig = TIER_CONFIG[user.membershipTier as keyof typeof TIER_CONFIG] || TIER_CONFIG.free;
+        
+        // Recalculate refilled allotment and subtract 1 for this experiment
+        const currentStoredAllotment = user.experimentAllotment ?? tierConfig.maxAllotment;
+        const refilledAllotment = calculateRefilledAllotment(
+          currentStoredAllotment,
+          user.lastExperimentAt,
+          tierConfig
+        );
+        const newAllotment = Math.max(0, refilledAllotment - 1);
+
+        console.log(`📊 [${callId}] Updating user allotment:`, {
+          previousStored: currentStoredAllotment,
+          afterRefill: refilledAllotment.toFixed(2),
+          afterDeduction: newAllotment.toFixed(2),
+        });
+
         await ctx.db.patch(args.userId, {
-          experimentCount: user.experimentCount + 1,
+          experimentCount: user.experimentCount + 1, // Lifetime count (for analytics)
+          experimentAllotment: newAllotment,
+          lastExperimentAt: Date.now(),
+        });
+      }
+    }
+
+    // Update anonymous user's allotment (tracked by IP)
+    if (!args.userId && args.ipAddress) {
+      const newAllotment = Math.max(0, anonymousRefilledAllotment - 1);
+
+      console.log(`📊 [${callId}] Updating anonymous allotment:`, {
+        ipAddress: args.ipAddress,
+        afterRefill: anonymousRefilledAllotment.toFixed(2),
+        afterDeduction: newAllotment.toFixed(2),
+      });
+
+      if (anonymousLimitRecord) {
+        // Update existing record
+        await ctx.db.patch(anonymousLimitRecord._id, {
+          experimentAllotment: newAllotment,
+          lastExperimentAt: Date.now(),
+        });
+      } else {
+        // Create new record for this IP
+        await ctx.db.insert("anonymousExperimentLimits", {
+          ipAddress: args.ipAddress,
+          experimentAllotment: newAllotment,
+          lastExperimentAt: Date.now(),
         });
       }
     }
@@ -111,6 +256,54 @@ export const createExperiment = mutation({
     return {
       experimentId,
       message: "Experiment created successfully",
+    };
+  },
+});
+
+// Get anonymous user's experiment allotment status (by IP address)
+// Used by frontend to display remaining experiments and as client-side backup
+export const getAnonymousAllotment = query({
+  args: {
+    ipAddress: v.string(),
+  },
+  returns: v.object({
+    currentAllotment: v.number(),
+    maxAllotment: v.number(),
+    refillPerDay: v.number(),
+    lastExperimentAt: v.optional(v.number()),
+    hoursUntilNextExperiment: v.optional(v.number()),
+  }),
+  handler: async (ctx, args) => {
+    const limitRecord = await ctx.db
+      .query("anonymousExperimentLimits")
+      .withIndex("by_ip", (q) => q.eq("ipAddress", args.ipAddress))
+      .first();
+
+    let currentAllotment = ANONYMOUS_CONFIG.maxAllotment;
+    let lastExperimentAt: number | undefined = undefined;
+
+    if (limitRecord) {
+      currentAllotment = calculateRefilledAllotment(
+        limitRecord.experimentAllotment,
+        limitRecord.lastExperimentAt,
+        ANONYMOUS_CONFIG
+      );
+      lastExperimentAt = limitRecord.lastExperimentAt;
+    }
+
+    // Calculate hours until next experiment if allotment < 1
+    let hoursUntilNextExperiment: number | undefined = undefined;
+    if (currentAllotment < 1) {
+      const daysUntilNext = (1 - currentAllotment) / ANONYMOUS_CONFIG.refillPerDay;
+      hoursUntilNextExperiment = Math.ceil(daysUntilNext * 24);
+    }
+
+    return {
+      currentAllotment: Math.floor(currentAllotment), // Round down for display
+      maxAllotment: ANONYMOUS_CONFIG.maxAllotment,
+      refillPerDay: ANONYMOUS_CONFIG.refillPerDay,
+      lastExperimentAt,
+      hoursUntilNextExperiment,
     };
   },
 });
@@ -595,11 +788,14 @@ export const clearUserExperiments = mutation({
       deletedCount++;
     }
 
-    // Reset user's experiment count
+    // Reset user's experiment count and refill allotment
     const user = await ctx.db.get(args.userId);
     if (user) {
+      const tierConfig = TIER_CONFIG[user.membershipTier as keyof typeof TIER_CONFIG] || TIER_CONFIG.free;
       await ctx.db.patch(args.userId, {
         experimentCount: 0,
+        experimentAllotment: tierConfig.maxAllotment,
+        lastExperimentAt: undefined,
       });
     }
 
@@ -676,11 +872,14 @@ export const clearAllExperiments = mutation({
       deletedCount++;
     }
 
-    // Reset all users' experiment counts
+    // Reset all users' experiment counts and refill allotments
     const users = await ctx.db.query("users").collect();
     for (const user of users) {
+      const tierConfig = TIER_CONFIG[user.membershipTier as keyof typeof TIER_CONFIG] || TIER_CONFIG.free;
       await ctx.db.patch(user._id, {
         experimentCount: 0,
+        experimentAllotment: tierConfig.maxAllotment,
+        lastExperimentAt: undefined,
       });
     }
 

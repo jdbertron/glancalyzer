@@ -25,5 +25,21 @@ export default defineConfig({
       'localforage',
       'regression'
     ]
+  },
+  build: {
+    // TensorFlow.js is ~1.8MB - this is expected for ML libraries
+    chunkSizeWarningLimit: 2000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Split TensorFlow into its own chunk (largest dependency)
+          'tensorflow': ['@tensorflow/tfjs', '@tensorflow-models/face-landmarks-detection'],
+          // Split React and related libraries
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          // Split Convex
+          'convex': ['convex', 'convex/react'],
+        }
+      }
+    }
   }
 })

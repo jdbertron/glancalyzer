@@ -61,13 +61,18 @@ export const registerUser = mutation({
         }
       }
     } else {
-      // Create new user
+      // Create new user with full experiment allotment for their tier
+      // Free tier starts with 3 experiments (3 per week max)
+      const FREE_TIER_MAX_ALLOTMENT = 3;
+      
       userId = await ctx.db.insert("users", {
         email: args.email,
         name: args.name,
         emailVerified: false,
         membershipTier: "free",
         experimentCount: 0,
+        experimentAllotment: FREE_TIER_MAX_ALLOTMENT,
+        lastExperimentAt: undefined, // No experiments yet
         createdAt: Date.now(),
         lastActiveAt: Date.now(),
       });
@@ -197,11 +202,12 @@ export const getCurrentUser = query({
       emailVerified: v.boolean(),
       membershipTier: v.union(
         v.literal("free"),
-        v.literal("basic"),
         v.literal("premium"),
-        v.literal("enterprise")
+        v.literal("professional")
       ),
       experimentCount: v.number(),
+      experimentAllotment: v.number(),
+      lastExperimentAt: v.optional(v.number()),
       createdAt: v.number(),
       lastActiveAt: v.number(),
     }),
@@ -218,6 +224,8 @@ export const getCurrentUser = query({
       emailVerified: user.emailVerified,
       membershipTier: user.membershipTier,
       experimentCount: user.experimentCount,
+      experimentAllotment: user.experimentAllotment ?? 3, // Default to 3 for existing users without this field (free tier max)
+      lastExperimentAt: user.lastExperimentAt,
       createdAt: user.createdAt,
       lastActiveAt: user.lastActiveAt,
     };

@@ -9,11 +9,13 @@ export default defineSchema({
     emailVerified: v.boolean(),
     membershipTier: v.union(
       v.literal("free"),
-      v.literal("basic"),
       v.literal("premium"),
-      v.literal("enterprise")
+      v.literal("professional")
     ),
-    experimentCount: v.number(),
+    experimentCount: v.number(), // Lifetime count (for analytics, never decremented)
+    // Token bucket rate limiting for experiments
+    experimentAllotment: v.number(), // Current available experiments (refills over time)
+    lastExperimentAt: v.optional(v.number()), // Timestamp of last experiment (for refill calculation)
     createdAt: v.number(),
     lastActiveAt: v.number(),
   }).index("by_email", ["email"]),
@@ -89,7 +91,7 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_experiment_type", ["experimentType"]),
 
-  // Rate limiting for IP addresses (1 minute cooldown)
+  // Rate limiting for IP addresses (1 minute cooldown for uploads)
   rateLimits: defineTable({
     ipAddress: v.string(),
     lastUploadAt: v.number(),
@@ -98,6 +100,14 @@ export default defineSchema({
     cooldownUntil: v.number(), // Timestamp when cooldown expires
   }).index("by_ip", ["ipAddress"])
     .index("by_cooldown", ["cooldownUntil"]),
+
+  // Experiment rate limiting for anonymous/unregistered users (tracked by IP)
+  // Uses token bucket algorithm: 5 experiments per month
+  anonymousExperimentLimits: defineTable({
+    ipAddress: v.string(),
+    experimentAllotment: v.number(), // Current available experiments
+    lastExperimentAt: v.optional(v.number()), // Timestamp of last experiment
+  }).index("by_ip", ["ipAddress"]),
 
   // Membership tiers configuration
   membershipTiers: defineTable({

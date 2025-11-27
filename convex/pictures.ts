@@ -78,6 +78,24 @@ export const uploadPicture = mutation({
       }
     }
 
+    // Calculate expiration based on user status
+    let expiresAt: number | undefined = undefined;
+    
+    if (!args.userId) {
+      // Unregistered users: 1 day retention
+      expiresAt = now + 24 * 60 * 60 * 1000; // 1 day
+    } else {
+      // Check user's membership tier
+      const user = await ctx.db.get(args.userId);
+      if (user) {
+        if (user.membershipTier === "free") {
+          // Free tier: 7 days retention
+          expiresAt = now + 7 * 24 * 60 * 60 * 1000; // 7 days
+        }
+        // Premium and Professional users: no expiration (unlimited retention)
+      }
+    }
+
     const pictureId = await ctx.db.insert("pictures", {
       userId: args.userId,
       fileName: args.fileName,
@@ -87,6 +105,8 @@ export const uploadPicture = mutation({
       uploadedAt: now,
       ipAddress: args.ipAddress,
       userAgent: args.userAgent,
+      expiresAt: expiresAt,
+      isExpired: false,
     });
 
     return {
@@ -247,6 +267,9 @@ export const deletePicture = mutation({
     }
 
     // Delete associated experiments first
+    // NOTE: We intentionally DO NOT decrement user.experimentCount here.
+    // This prevents users from bypassing experiment caps by deleting images.
+    // The experimentCount represents lifetime usage, not current experiment count.
     const experiments = await ctx.db
       .query("experiments")
       .withIndex("by_picture", (q) => q.eq("pictureId", args.pictureId))
@@ -300,5 +323,77 @@ export const getUploadStats = query({
   },
 });
 
-// Note: Removed markExpiredPictures and cleanupExpiredPictures functions
-// Pictures are now kept indefinitely for training data collection
+// Internal mutation to clean up expired pictures
+// Called by the cron job in crons.ts
+// 
+// IMPORTANT: When experiments are deleted (either via picture deletion or expiration),
+// we intentionally DO NOT decrement the user's experimentCount. This prevents users
+// from bypassing experiment caps by deleting images. The experimentCount represents
+// a lifetime usage count, not the current number of experiments in the database.
+export const cleanupExpiredPictures = internalMutation({
+  args: {},
+  returns: v.object({
+    deletedPictureCount: v.number(),
+    deletedAnonymousLimitCount: v.number(),
+    message: v.string(),
+  }),
+  handler: async (ctx) => {
+    const now = Date.now();
+    
+    // Find all pictures that have expired
+    const allPictures = await ctx.db.query("pictures").collect();
+    const expiredPictures = allPictures.filter(
+      (p) => p.expiresAt && p.expiresAt < now && !p.isExpired
+    );
+
+    let deletedPictureCount = 0;
+
+    for (const picture of expiredPictures) {
+      // Delete associated experiments first
+      // NOTE: We do NOT decrement user.experimentCount here - this is intentional
+      // to prevent cap bypass. See comment above.
+      const experiments = await ctx.db
+        .query("experiments")
+        .withIndex("by_picture", (q) => q.eq("pictureId", picture._id))
+        .collect();
+
+      for (const experiment of experiments) {
+        await ctx.db.delete(experiment._id);
+      }
+
+      // Delete the file from storage
+      try {
+        await ctx.storage.delete(picture.fileId);
+      } catch (e) {
+        // File might already be deleted, continue
+        console.log(`Could not delete file ${picture.fileId}:`, e);
+      }
+
+      // Delete the picture record
+      await ctx.db.delete(picture._id);
+      deletedPictureCount++;
+    }
+
+    // Clean up stale anonymous experiment limit records
+    // Records not used in 60 days can be safely deleted (they would have full allotment anyway)
+    const SIXTY_DAYS_MS = 60 * 24 * 60 * 60 * 1000;
+    const staleThreshold = now - SIXTY_DAYS_MS;
+    
+    const allAnonymousLimits = await ctx.db.query("anonymousExperimentLimits").collect();
+    const staleLimits = allAnonymousLimits.filter(
+      (record) => !record.lastExperimentAt || record.lastExperimentAt < staleThreshold
+    );
+
+    let deletedAnonymousLimitCount = 0;
+    for (const record of staleLimits) {
+      await ctx.db.delete(record._id);
+      deletedAnonymousLimitCount++;
+    }
+
+    return {
+      deletedPictureCount,
+      deletedAnonymousLimitCount,
+      message: `Cleaned up ${deletedPictureCount} expired pictures and ${deletedAnonymousLimitCount} stale anonymous limit records`,
+    };
+  },
+});

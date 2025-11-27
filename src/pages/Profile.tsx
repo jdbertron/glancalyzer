@@ -32,34 +32,27 @@ export function Profile() {
   const pendingExperiments = userExperiments.filter(exp => exp.status === 'pending').length
   const failedExperiments = userExperiments.filter(exp => exp.status === 'failed').length
 
-  const membershipInfo = {
+  const membershipInfo: Record<string, { name: string; color: string; icon: typeof User; maxExperiments: number; features: string[] }> = {
     free: {
       name: 'Free',
       color: 'gray',
       icon: User,
-      maxExperiments: 5,
-      features: ['5 experiments per month', '7-day image retention', 'Basic AI analysis']
-    },
-    basic: {
-      name: 'Basic',
-      color: 'blue',
-      icon: Zap,
-      maxExperiments: 50,
-      features: ['50 experiments per month', '30-day image retention', 'Advanced AI analysis']
+      maxExperiments: 3,
+      features: ['3 experiments per week', '7-day image retention', 'Eye tracking analysis']
     },
     premium: {
       name: 'Premium',
       color: 'purple',
       icon: Crown,
-      maxExperiments: 200,
-      features: ['200 experiments per month', 'Unlimited image retention', 'All AI analysis features', 'Priority processing']
+      maxExperiments: 100,
+      features: ['100 experiments per month', 'Unlimited image retention', 'Eye tracking analysis']
     },
-    enterprise: {
-      name: 'Enterprise',
+    professional: {
+      name: 'Professional',
       color: 'gold',
       icon: Crown,
-      maxExperiments: 1000,
-      features: ['1000 experiments per month', 'Unlimited image retention', 'All features', 'API access', 'Priority support']
+      maxExperiments: 500,
+      features: ['500 experiments per month', 'Unlimited image retention', 'Eye tracking analysis', 'Priority support']
     }
   }
 

@@ -1,4 +1,4 @@
-# Glancalyzer - Eye Tracking Analysis Platform
+# Don't Blink Art - Eye Tracking Analysis Platform
 
 A modern React TypeScript web application with a Convex backend for eye tracking analysis and visual attention pattern understanding.
 
@@ -7,9 +7,9 @@ A modern React TypeScript web application with a Convex backend for eye tracking
 - **User Authentication**: Email verification system with secure user management
 - **Picture Upload**: Drag-and-drop image upload with file validation
 - **Eye Tracking Experiments**: Webcam-based eye tracking analysis with WebGazer.js
-- **Rate Limiting**: Unregistered users limited to 1 picture per 7 days
-- **Membership Tiers**: Free, Basic, Premium, and Enterprise tiers with different limits
-- **Auto Cleanup**: Automatic deletion of expired free-tier content after 7 days
+- **Rate Limiting**: Upload cooldown to prevent abuse
+- **Membership Tiers**: Free, Premium ($2.99/mo), and Professional ($30/mo) tiers
+- **Auto Cleanup**: Automatic deletion of expired content (1 day for unregistered, 7 days for free tier)
 - **Modern UI**: Beautiful, responsive interface built with Tailwind CSS
 
 ## Tech Stack
@@ -131,18 +131,18 @@ gazalyzer/
 
 ## Membership Tiers
 
-| Tier | Monthly Experiments | Image Retention | Features |
-|------|-------------------|-----------------|----------|
-| Free | 5 | 7 days | Basic AI analysis |
-| Basic | 50 | 30 days | Advanced AI analysis |
-| Premium | 200 | Unlimited | All features + Priority processing |
-| Enterprise | 1000 | Unlimited | API access + Priority support |
+| Tier | Experiments | Image Retention | Price |
+|------|-------------|-----------------|-------|
+| Unregistered | 5/month | 1 day | Free |
+| Free (registered) | 3/week | 7 days | Free |
+| Premium | 100/month | Unlimited | $2.99/month |
+| Professional | Unlimited | Unlimited | $30/month |
 
 ## Rate Limiting
 
-- **Unregistered users**: 1 picture per 7 days (IP-based)
-- **Registered users**: Based on membership tier
-- **Automatic cleanup**: Free tier images deleted after 7 days
+- **Unregistered users**: 5 experiments/month, images deleted after 1 day
+- **Free tier (registered)**: 3 experiments/week, images deleted after 7 days
+- **Premium/Professional**: Images stored indefinitely
 
 ## Development
 

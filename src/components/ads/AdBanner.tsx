@@ -94,7 +94,7 @@ export function AdBanner({
             className={`bg-gray-100 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center text-gray-500 ${formatConfig.className}`}
             style={{ 
               ...formatConfig.style,
-              minHeight: formatConfig.style.minHeight || '100px',
+              minHeight: ('minHeight' in formatConfig.style ? formatConfig.style.minHeight : undefined) || '100px',
             }}
           >
             <div className="text-center p-4">

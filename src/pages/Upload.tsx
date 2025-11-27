@@ -244,7 +244,7 @@ export function Upload() {
             {!user && (
               <div className="space-y-4">
                 <p className="text-sm text-gray-500">
-                  Register for an account to upload unlimited images and run experiments!
+                  Register for a free account to get 3 experiments per week!
                 </p>
                 <a
                   href="/register"

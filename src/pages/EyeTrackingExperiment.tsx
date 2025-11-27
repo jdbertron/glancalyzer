@@ -862,7 +862,7 @@ export function EyeTrackingExperiment() {
     setImageOrientation(aspectRatio > 1 ? 'landscape' : 'portrait')
   }, [])
 
-  // Cleanup on unmount
+  // Cleanup on unmount - stop WebGazer when navigating away
   useEffect(() => {
     return () => {
       if (intervalRef.current) {
@@ -871,7 +871,13 @@ export function EyeTrackingExperiment() {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current)
       }
-      // Don't cleanup WebGazer here - let it persist globally
+      // Stop WebGazer when leaving the page
+      // Calibration data is preserved in IndexedDB via saveDataAcrossSessions(true)
+      // and will be reloaded when WebGazer is restarted
+      console.log('🧹 [EyeTrackingExperiment] Unmounting - stopping WebGazer...')
+      webgazerManager.stopWebcam().catch((error) => {
+        console.error('Error stopping WebGazer on unmount:', error)
+      })
     }
   }, [])
 

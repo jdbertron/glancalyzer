@@ -526,12 +526,19 @@ export function CalibrationLab() {
     }
   }, [isTracking])
 
-  // Cleanup on unmount
+  // Cleanup on unmount - stop WebGazer when navigating away
   useEffect(() => {
     return () => {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current)
       }
+      // Stop WebGazer when leaving the page
+      // Calibration data is preserved in IndexedDB via saveDataAcrossSessions(true)
+      // and will be reloaded when WebGazer is restarted
+      console.log('🧹 [CalibrationLab] Unmounting - stopping WebGazer...')
+      webgazerManager.stopWebcam().catch((error) => {
+        console.error('Error stopping WebGazer on unmount:', error)
+      })
     }
   }, [])
 

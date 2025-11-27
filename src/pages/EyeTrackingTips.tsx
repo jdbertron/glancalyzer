@@ -146,6 +146,12 @@ export function EyeTrackingTips() {
       icon: Monitor,
       tips: [
         {
+          title: 'Blinking is Fine',
+          description: 'Don\'t worry about blinking naturally during eye tracking sessions',
+          isGood: true,
+          details: 'Despite the site name, Glancalyzer fully supports natural blinking! Our eye tracking system handles blinks gracefully and continues tracking when your eyes reopen. Blink naturally for comfort—no need to keep your eyes unnaturally open.'
+        },
+        {
           title: 'Clean Camera Lens',
           description: 'Ensure your webcam lens is clean and unobstructed',
           isGood: true,

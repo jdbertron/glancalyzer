@@ -1,6 +1,7 @@
 import { useState, Fragment } from 'react'
 import { useQuery, useMutation } from 'convex/react'
 import { api } from '../../convex/_generated/api'
+import { Id } from '../../convex/_generated/dataModel'
 import { useAuth } from '../hooks/useAuth'
 import { 
   Image as ImageIcon, 
@@ -30,20 +31,44 @@ export function MyPictures() {
   // Delete picture mutation
   const deletePicture = useMutation(api.pictures.deletePicture)
 
+  // Define the picture type for proper type inference
+  type PictureItem = {
+    _id: string;
+    fileName: string;
+    fileId: Id<"_storage">;
+    uploadedAt: number;
+    fileSize: number | undefined;
+    experimentCount: number;
+  }
+
   // Combine both sources: direct user pictures + pictures from experiments
   // Deduplicate by _id, preferring direct user pictures (they have more complete data)
   const allPictures = (() => {
-    if (userPictures === undefined) return []
+    if (userPictures === undefined) return [] as PictureItem[]
     const userPics = userPictures || []
     const expPics = (picturesFromExperiments !== undefined && picturesFromExperiments !== null) ? picturesFromExperiments : []
     
     // Start with user pictures, then add experiment pictures that aren't already included
-    const combined = [...userPics]
+    const combined: PictureItem[] = userPics.map(p => ({
+      _id: p._id,
+      fileName: p.fileName,
+      fileId: p.fileId,
+      uploadedAt: p.uploadedAt,
+      fileSize: p.fileSize,
+      experimentCount: p.experimentCount,
+    }))
     const userPicIds = new Set(userPics.map(p => p._id))
     
     expPics.forEach(expPic => {
       if (!userPicIds.has(expPic._id)) {
-        combined.push(expPic)
+        combined.push({
+          _id: expPic._id,
+          fileName: expPic.fileName,
+          fileId: expPic.fileId,
+          uploadedAt: expPic.uploadedAt,
+          fileSize: expPic.fileSize,
+          experimentCount: expPic.experimentCount,
+        })
       }
     })
     
