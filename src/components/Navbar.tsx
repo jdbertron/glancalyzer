@@ -1,12 +1,18 @@
 import { Link } from 'react-router-dom'
 import { Upload, User, LogOut, Home, Image, Lightbulb, Settings } from 'lucide-react'
-import { Id } from '../../convex/_generated/dataModel'
+import { useAuth } from '../hooks/useAuth'
 
 interface NavbarProps {
   user: any
 }
 
 export function Navbar({ user }: NavbarProps) {
+  const { logout } = useAuth()
+
+  const handleLogout = async () => {
+    await logout()
+  }
+
   return (
     <nav className="bg-white shadow-sm border-b">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -67,10 +73,7 @@ export function Navbar({ user }: NavbarProps) {
                   <span>Profile</span>
                 </Link>
                 <button
-                  onClick={() => {
-                    localStorage.removeItem('userId')
-                    window.location.reload()
-                  }}
+                  onClick={handleLogout}
                   className="btn btn-outline btn-sm flex items-center space-x-2"
                 >
                   <LogOut className="h-4 w-4" />

@@ -1,34 +1,34 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { authTables } from "@convex-dev/auth/server";
 
 export default defineSchema({
-  // Users table with email verification
+  // Include Convex Auth tables
+  ...authTables,
+
+  // Users table - extends the auth users table with app-specific fields
+  // Note: The authTables includes a 'users' table, but we define our own with additional fields
   users: defineTable({
-    email: v.string(),
+    // Auth fields (managed by Convex Auth)
+    email: v.optional(v.string()),
+    emailVerificationTime: v.optional(v.number()),
+    // Legacy field for backward compatibility with existing users
+    emailVerified: v.optional(v.boolean()),
     name: v.optional(v.string()),
-    emailVerified: v.boolean(),
-    membershipTier: v.union(
+    image: v.optional(v.string()),
+    // App-specific fields
+    membershipTier: v.optional(v.union(
       v.literal("free"),
       v.literal("premium"),
       v.literal("professional")
-    ),
-    experimentCount: v.number(), // Lifetime count (for analytics, never decremented)
+    )),
+    experimentCount: v.optional(v.number()), // Lifetime count (for analytics, never decremented)
     // Token bucket rate limiting for experiments
-    experimentAllotment: v.number(), // Current available experiments (refills over time)
+    experimentAllotment: v.optional(v.number()), // Current available experiments (refills over time)
     lastExperimentAt: v.optional(v.number()), // Timestamp of last experiment (for refill calculation)
-    createdAt: v.number(),
-    lastActiveAt: v.number(),
+    createdAt: v.optional(v.number()),
+    lastActiveAt: v.optional(v.number()),
   }).index("by_email", ["email"]),
-
-  // Email verification tokens
-  emailVerificationTokens: defineTable({
-    userId: v.id("users"),
-    token: v.string(),
-    expiresAt: v.number(),
-    used: v.boolean(),
-  })
-    .index("by_token", ["token"])
-    .index("by_userId", ["userId"]),
 
   // Pictures uploaded by users
   pictures: defineTable({

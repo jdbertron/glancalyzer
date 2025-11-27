@@ -19,7 +19,7 @@ export function Upload() {
 
   const generateUploadUrl = useMutation(api.pictures.generateUploadUrl)
   const uploadPicture = useMutation(api.pictures.uploadPicture)
-  const canUserUpload = useQuery(api.auth.canUserUpload, 
+  const canUserUpload = useQuery(api.authUtils.canUserUpload, 
     userId ? { userId } : { ipAddress: 'anonymous' } // Allow anonymous uploads
   )
   const uploadedPicture = useQuery(api.pictures.getPicture, 

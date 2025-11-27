@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
-import { Mail, ArrowLeft } from 'lucide-react'
+import { Mail, Lock, ArrowLeft, Eye, EyeOff } from 'lucide-react'
 
 export function Login() {
   const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const { login } = useAuth()
   const navigate = useNavigate()
@@ -14,26 +16,8 @@ export function Login() {
     setIsLoading(true)
 
     try {
-      const result = await login(email)
-      // Check if user is verified by checking if we got a login success vs registration
-      // If user was already verified, navigate to dashboard
-      // Otherwise navigate to verify-email
-      const storedUserId = localStorage.getItem('userId')
-      if (storedUserId) {
-        // Give it a moment for the user query to update, then check
-        setTimeout(() => {
-          // If we successfully logged in, go to dashboard
-          // If we registered, go to verify-email
-          // The message will tell us which one happened
-          if (result.message === 'Login successful') {
-            navigate('/dashboard')
-          } else {
-            navigate('/verify-email')
-          }
-        }, 100)
-      } else {
-        navigate('/verify-email')
-      }
+      await login(email, password)
+      navigate('/dashboard')
     } catch (error) {
       // Error is handled in the hook
     } finally {
@@ -60,25 +44,60 @@ export function Login() {
           </p>
         </div>
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div>
-            <label htmlFor="email" className="sr-only">
-              Email address
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Mail className="h-5 w-5 text-gray-400" />
+          <div className="space-y-4">
+            <div>
+              <label htmlFor="email" className="sr-only">
+                Email address
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Mail className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  className="input pl-10"
+                  placeholder="Email address"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
               </div>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                required
-                className="input pl-10"
-                placeholder="Email address"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
+            </div>
+
+            <div>
+              <label htmlFor="password" className="sr-only">
+                Password
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Lock className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  id="password"
+                  name="password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  required
+                  className="input pl-10 pr-10"
+                  placeholder="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                  onClick={() => setShowPassword(!showPassword)}
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-5 w-5 text-gray-400 hover:text-gray-600" />
+                  ) : (
+                    <Eye className="h-5 w-5 text-gray-400 hover:text-gray-600" />
+                  )}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -88,14 +107,8 @@ export function Login() {
               disabled={isLoading}
               className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50"
             >
-              {isLoading ? 'Sending...' : 'Sign in'}
+              {isLoading ? 'Signing in...' : 'Sign in'}
             </button>
-          </div>
-
-          <div className="text-center">
-            <p className="text-sm text-gray-600">
-              We'll send you a verification email to confirm your account.
-            </p>
           </div>
         </form>
       </div>

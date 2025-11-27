@@ -16,6 +16,8 @@
     "docker:stop": "docker-compose down"
   },
   "dependencies": {
+    "@auth/core": "^0.37.4",
+    "@convex-dev/auth": "^0.0.90",
     "@hookform/resolvers": "^3.3.2",
     "@tensorflow-models/face-landmarks-detection": "0.0.3",
     "@tensorflow/tfjs": "^3.15.0",

@@ -220,7 +220,7 @@ export const createExperiment = mutation({
         });
 
         await ctx.db.patch(args.userId, {
-          experimentCount: user.experimentCount + 1, // Lifetime count (for analytics)
+          experimentCount: (user.experimentCount ?? 0) + 1, // Lifetime count (for analytics)
           experimentAllotment: newAllotment,
           lastExperimentAt: Date.now(),
         });

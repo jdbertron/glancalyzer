@@ -9,9 +9,12 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as authUtils from "../authUtils.js";
 import type * as crons from "../crons.js";
 import type * as experiments from "../experiments.js";
+import type * as http from "../http.js";
 import type * as pictures from "../pictures.js";
+import type * as users from "../users.js";
 
 import type {
   ApiFromModules,
@@ -29,9 +32,12 @@ import type {
  */
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  authUtils: typeof authUtils;
   crons: typeof crons;
   experiments: typeof experiments;
+  http: typeof http;
   pictures: typeof pictures;
+  users: typeof users;
 }>;
 declare const fullApiWithMounts: typeof fullApi;
 

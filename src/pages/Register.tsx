@@ -1,48 +1,53 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useMutation } from 'convex/react'
 import { useAuth } from '../hooks/useAuth'
-import { Mail, User, ArrowLeft } from 'lucide-react'
+import { api } from '../../convex/_generated/api'
+import { Mail, User, Lock, ArrowLeft, Eye, EyeOff } from 'lucide-react'
 
 export function Register() {
-  console.log('Register component rendering')
-  
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState('')
   
-  const auth = useAuth()
-  const login = auth?.login
-  console.log('useAuth hook called successfully', { hasLogin: !!login, auth })
-  
+  const { register } = useAuth()
+  const initializeProfile = useMutation(api.users.initializeProfile)
   const navigate = useNavigate()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setError('')
+
+    // Validate passwords match
+    if (password !== confirmPassword) {
+      setError('Passwords do not match')
+      return
+    }
+
+    // Validate password length
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters')
+      return
+    }
+
     setIsLoading(true)
 
     try {
-      if (!login) {
-        throw new Error('Login function not available')
-      }
-      await login(email, name)
-      navigate('/verify-email')
+      await register(email, password, name || undefined)
+      // Initialize the user profile with app-specific fields
+      await initializeProfile()
+      navigate('/dashboard')
     } catch (error) {
       console.error('Registration error:', error)
       // Error is handled in the hook
     } finally {
       setIsLoading(false)
     }
-  }
-
-  if (!login) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-md w-full space-y-8 text-center">
-          <h2 className="text-2xl font-bold text-gray-900">Error</h2>
-          <p className="text-gray-600">Authentication system is not available. Please refresh the page.</p>
-        </div>
-      </div>
-    )
   }
 
   return (
@@ -64,46 +69,120 @@ export function Register() {
           </p>
         </div>
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div>
-            <label htmlFor="name" className="sr-only">
-              Full name
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <User className="h-5 w-5 text-gray-400" />
-              </div>
-              <input
-                id="name"
-                name="name"
-                type="text"
-                autoComplete="name"
-                className="input pl-10"
-                placeholder="Full name (optional)"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md text-sm">
+              {error}
             </div>
-          </div>
-
-          <div>
-            <label htmlFor="email" className="sr-only">
-              Email address
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Mail className="h-5 w-5 text-gray-400" />
+          )}
+          
+          <div className="space-y-4">
+            <div>
+              <label htmlFor="name" className="sr-only">
+                Full name
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <User className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  id="name"
+                  name="name"
+                  type="text"
+                  autoComplete="name"
+                  className="input pl-10"
+                  placeholder="Full name (optional)"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
               </div>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                required
-                className="input pl-10"
-                placeholder="Email address"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
+            </div>
+
+            <div>
+              <label htmlFor="email" className="sr-only">
+                Email address
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Mail className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  className="input pl-10"
+                  placeholder="Email address"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="password" className="sr-only">
+                Password
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Lock className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  id="password"
+                  name="password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  required
+                  className="input pl-10 pr-10"
+                  placeholder="Password (min 8 characters)"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                  onClick={() => setShowPassword(!showPassword)}
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-5 w-5 text-gray-400 hover:text-gray-600" />
+                  ) : (
+                    <Eye className="h-5 w-5 text-gray-400 hover:text-gray-600" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label htmlFor="confirmPassword" className="sr-only">
+                Confirm Password
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Lock className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  id="confirmPassword"
+                  name="confirmPassword"
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  required
+                  className="input pl-10 pr-10"
+                  placeholder="Confirm password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                >
+                  {showConfirmPassword ? (
+                    <EyeOff className="h-5 w-5 text-gray-400 hover:text-gray-600" />
+                  ) : (
+                    <Eye className="h-5 w-5 text-gray-400 hover:text-gray-600" />
+                  )}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -115,12 +194,6 @@ export function Register() {
             >
               {isLoading ? 'Creating account...' : 'Create account'}
             </button>
-          </div>
-
-          <div className="text-center">
-            <p className="text-sm text-gray-600">
-              We'll send you a verification email to confirm your account.
-            </p>
           </div>
         </form>
       </div>

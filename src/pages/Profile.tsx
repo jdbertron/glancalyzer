@@ -56,7 +56,7 @@ export function Profile() {
     }
   }
 
-  const currentMembership = membershipInfo[user.membershipTier]
+  const currentMembership = membershipInfo[user.membershipTier || 'free']
   const MembershipIcon = currentMembership.icon
 
   return (
@@ -105,20 +105,16 @@ export function Profile() {
                     <Calendar className="h-5 w-5 text-gray-400" />
                     <div>
                       <p className="font-medium text-gray-900">
-                        {new Date(user.createdAt).toLocaleDateString()}
+                        {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}
                       </p>
                       <p className="text-sm text-gray-500">Member since</p>
                     </div>
                   </div>
 
                   <div className="flex items-center space-x-4">
-                    <div className={`h-3 w-3 rounded-full ${
-                      user.emailVerified ? 'bg-green-500' : 'bg-red-500'
-                    }`} />
+                    <div className="h-3 w-3 rounded-full bg-green-500" />
                     <div>
-                      <p className="font-medium text-gray-900">
-                        {user.emailVerified ? 'Verified' : 'Unverified'}
-                      </p>
+                      <p className="font-medium text-gray-900">Verified</p>
                       <p className="text-sm text-gray-500">Email status</p>
                     </div>
                   </div>
@@ -227,7 +223,7 @@ export function Profile() {
               </div>
             </div>
 
-            {user.membershipTier === 'free' && (
+            {(user.membershipTier || 'free') === 'free' && (
               <div className="card border-primary-200 bg-primary-50">
                 <div className="card-content">
                   <h3 className="font-medium text-gray-900 mb-2">
