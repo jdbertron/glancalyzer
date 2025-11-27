@@ -22,7 +22,7 @@
  * Master switch - set to true when AdSense is approved and ready
  * Keep false during development to avoid policy violations
  */
-export const ADSENSE_ENABLED = false;
+export const ADSENSE_ENABLED = false;  // ← Set to `true` after AdSense approval email
 
 /**
  * Your Google AdSense Publisher ID
@@ -34,7 +34,7 @@ export const ADSENSE_PUBLISHER_ID = 'ca-pub-1598809432303523';
  * Test mode - shows placeholder boxes instead of real ads
  * Useful for development and testing layouts
  */
-export const ADSENSE_TEST_MODE = true;
+export const ADSENSE_TEST_MODE = true;  // ← Set to `false` for real ads after approval
 
 // ============================================================================
 // AD SLOTS CONFIGURATION
@@ -46,36 +46,37 @@ export const ADSENSE_TEST_MODE = true;
  */
 export const AD_SLOTS = {
   // Upload page - bottom of the upload form
+  // To get slot IDs: AdSense Dashboard → Ads → By ad unit → Create Display ad → Copy slot ID from generated code
   uploadPageBottom: {
-    slotId: '1234567890', // Replace with your actual slot ID
+    slotId: '4621249789', 
     format: 'horizontal' as const,
     enabled: true,
   },
   
   // Upload page - sidebar (if you add a sidebar layout)
   uploadPageSidebar: {
-    slotId: '1234567891',
+    slotId: '3722159133',
     format: 'vertical' as const,
     enabled: true,
   },
   
   // My Pictures page - between picture cards (in-feed style)
   picturesPageInFeed: {
-    slotId: '1234567892',
+    slotId: '4983393624',
     format: 'rectangle' as const,
     enabled: true,
   },
   
   // My Pictures page - top banner
   picturesPageBanner: {
-    slotId: '1234567893',
+    slotId: '9570324134',
     format: 'horizontal' as const,
     enabled: true,
   },
   
   // Tips page - sidebar below categories
   tipsSidebar: {
-    slotId: '1234567894',
+    slotId: '5662050472',
     format: 'vertical' as const,
     enabled: true,
   },
