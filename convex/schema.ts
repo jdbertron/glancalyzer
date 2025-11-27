@@ -28,7 +28,22 @@ export default defineSchema({
     lastExperimentAt: v.optional(v.number()), // Timestamp of last experiment (for refill calculation)
     createdAt: v.optional(v.number()),
     lastActiveAt: v.optional(v.number()),
-  }).index("by_email", ["email"]),
+    // Stripe subscription fields
+    stripeCustomerId: v.optional(v.string()),
+    stripeSubscriptionId: v.optional(v.string()),
+    stripeSubscriptionStatus: v.optional(v.union(
+      v.literal("active"),
+      v.literal("canceled"),
+      v.literal("incomplete"),
+      v.literal("incomplete_expired"),
+      v.literal("past_due"),
+      v.literal("trialing"),
+      v.literal("unpaid"),
+      v.literal("paused")
+    )),
+    stripeCurrentPeriodEnd: v.optional(v.number()), // Subscription period end timestamp
+  }).index("by_email", ["email"])
+    .index("by_stripe_customer_id", ["stripeCustomerId"]),
 
   // Pictures uploaded by users
   pictures: defineTable({

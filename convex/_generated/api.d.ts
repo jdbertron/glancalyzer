@@ -14,6 +14,8 @@ import type * as crons from "../crons.js";
 import type * as experiments from "../experiments.js";
 import type * as http from "../http.js";
 import type * as pictures from "../pictures.js";
+import type * as stripe from "../stripe.js";
+import type * as stripeHelpers from "../stripeHelpers.js";
 import type * as users from "../users.js";
 
 import type {
@@ -37,6 +39,8 @@ declare const fullApi: ApiFromModules<{
   experiments: typeof experiments;
   http: typeof http;
   pictures: typeof pictures;
+  stripe: typeof stripe;
+  stripeHelpers: typeof stripeHelpers;
   users: typeof users;
 }>;
 declare const fullApiWithMounts: typeof fullApi;
