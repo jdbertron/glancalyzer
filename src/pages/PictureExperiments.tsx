@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { EyeTrackingResults } from '../components/EyeTrackingResults'
+import { DEBUG_CONFIG } from '../config/debug'
 
 // Component that loads image dimensions and passes them to EyeTrackingResults
 function EyeTrackingResultsWithDimensions({ data, imageUrl }: { data: any, imageUrl: string }) {
@@ -161,8 +162,8 @@ export function PictureExperiments() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Debug Info - Remove this after fixing the issue */}
-        {debugExperiments && debugExperiments.length > 0 && (
+        {/* Debug Info - controlled by DEBUG_CONFIG.showExperimentDebug */}
+        {DEBUG_CONFIG.showExperimentDebug && debugExperiments && debugExperiments.length > 0 && (
           <div className="card mb-6 bg-yellow-50 border-yellow-200">
             <div className="card-header">
               <h2 className="card-title text-yellow-800">🐛 Debug: Experiments in Database</h2>

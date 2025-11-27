@@ -145,11 +145,46 @@ class WebGazerManager {
       stream.getTracks().forEach(track => track.stop())
       console.log('✅ [WebGazerManager] Webcam access granted')
 
-      // Import WebGazer from local project (../WebGazer)
-      // This uses the local WebGazer package specified in package.json: "webgazer": "file:../WebGazer"
-      const webgazerModule = await import('webgazer')
-      const wg = webgazerModule.default || webgazerModule as any
-      console.log('📦 [WebGazerManager] Using local WebGazer package from ../WebGazer')
+      // Load WebGazer as a separate script (not bundled) to preserve its code exactly as-is
+      // This ensures WebGazer's math code is never transformed by Vite/Rollup
+      let wg: any
+      
+      if (import.meta.env.PROD) {
+        // Production: Load from separate script file (not bundled)
+        // The build plugin copies webgazer.js to dist/webgazer.js
+        if (!(window as any).webgazer) {
+          await new Promise<void>((resolve, reject) => {
+            const script = document.createElement('script')
+            script.src = '/webgazer.js'
+            script.type = 'text/javascript'
+            script.async = false // Load synchronously to ensure webgazer is available
+            script.onload = () => {
+              // WebGazer UMD bundle exposes 'webgazer' on window
+              wg = (window as any).webgazer
+              if (!wg) {
+                reject(new Error('WebGazer failed to load: webgazer not found on window'))
+              } else {
+                console.log('📦 [WebGazerManager] Loaded WebGazer from separate script (not bundled)')
+                resolve()
+              }
+            }
+            script.onerror = (e) => {
+              console.error('Failed to load WebGazer script:', e)
+              reject(new Error('Failed to load WebGazer script from /webgazer.js'))
+            }
+            document.head.appendChild(script)
+          })
+        } else {
+          wg = (window as any).webgazer
+          console.log('📦 [WebGazerManager] Using WebGazer from window (already loaded)')
+        }
+      } else {
+        // Development: Use local package import (works fine in dev mode)
+        // Use dynamic import to avoid bundling issues
+        const webgazerModule = await import(/* @vite-ignore */ 'webgazer')
+        wg = webgazerModule.default || webgazerModule as any
+        console.log('📦 [WebGazerManager] Using local WebGazer package from ../WebGazer (dev mode)')
+      }
 
       // Configure WebGazer
       wg.setRegression('ridge')
@@ -248,9 +283,9 @@ class WebGazerManager {
       // Control face overlay and feedback box based on debug mode
       wg.params.showFaceOverlay = this.debugMode
       wg.params.showFaceFeedbackBox = this.debugMode
-      wg.params.frameSkipRate = 4; // For 30fps (every other frame)
+      wg.params.frameSkipRate = 2; // For 30fps (every other frame)
       wg.params.trackEye = 'both';
-      wg.params.enableBlinkDetection = true;
+      wg.params.enableBlinkDetection = false;
       
       // Clear storage right before begin() if we need to start fresh
       // This prevents WebGazer from loading old calibration data during begin()

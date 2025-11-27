@@ -21,6 +21,7 @@ import { EYE_TRACKING_EXPERIMENT } from '../constants'
 import { EyeTrackingResults } from '../components/EyeTrackingResults'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { webgazerManager, GazePoint, CalibrationResult, ImageBounds } from '../utils/webgazerManager'
+import { DEBUG_CONFIG } from '../config/debug'
 
 // Fixation detection algorithm
 function detectFixations(gazePoints: GazePoint[]): Array<{
@@ -132,7 +133,7 @@ export function EyeTrackingExperiment() {
   const [timeRemaining, setTimeRemaining] = useState<number>(EYE_TRACKING_EXPERIMENT.DURATION_SECONDS)
   const [showResults, setShowResults] = useState(false)
   const [experimentResults, setExperimentResults] = useState<EyeTrackingData | null>(null)
-  const [debugMode, setDebugMode] = useState(false)
+  const [debugMode, setDebugMode] = useState(DEBUG_CONFIG.showEyeTrackingDebug)
   const [imageOrientation, setImageOrientation] = useState<'portrait' | 'landscape'>('landscape')
   const [imageNaturalDimensions, setImageNaturalDimensions] = useState<{ width: number; height: number } | null>(null)
   const [calibrationPoints, setCalibrationPoints] = useState<Array<{ x: number; y: number }>>([])

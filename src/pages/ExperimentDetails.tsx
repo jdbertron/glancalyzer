@@ -68,27 +68,10 @@ export function ExperimentDetails() {
     picture?.fileId ? { fileId: picture.fileId } : 'skip'
   )
 
-  if (!user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">
-            Authentication Required
-          </h2>
-          <p className="text-gray-600 mb-4">
-            Please log in to view experiment details
-          </p>
-          <button
-            onClick={() => navigate('/login')}
-            className="btn btn-primary"
-          >
-            Sign In
-          </button>
-        </div>
-      </div>
-    )
-  }
+  // Note: We don't require authentication here because:
+  // 1. Anonymous users can run experiments and need to see their results
+  // 2. The backend getExperiment handles access control (returns null if unauthorized)
+  // 3. The "Experiment Not Found" block below handles denied access gracefully
 
   if (experiment === undefined || picture === undefined) {
     return (
