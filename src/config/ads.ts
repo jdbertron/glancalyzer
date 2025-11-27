@@ -28,7 +28,7 @@ export const ADSENSE_ENABLED = false;
  * Your Google AdSense Publisher ID
  * Get this from your AdSense dashboard
  */
-export const ADSENSE_PUBLISHER_ID = 'ca-pub-XXXXXXXXXXXXXXXX';
+export const ADSENSE_PUBLISHER_ID = 'ca-pub-1598809432303523';
 
 /**
  * Test mode - shows placeholder boxes instead of real ads
