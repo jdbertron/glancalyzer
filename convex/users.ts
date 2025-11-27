@@ -21,6 +21,18 @@ export const viewer = query({
       lastExperimentAt: v.optional(v.number()),
       createdAt: v.optional(v.number()),
       lastActiveAt: v.optional(v.number()),
+      // Stripe subscription fields
+      stripeSubscriptionStatus: v.optional(v.union(
+        v.literal("active"),
+        v.literal("canceled"),
+        v.literal("incomplete"),
+        v.literal("incomplete_expired"),
+        v.literal("past_due"),
+        v.literal("trialing"),
+        v.literal("unpaid"),
+        v.literal("paused")
+      )),
+      stripeCurrentPeriodEnd: v.optional(v.number()),
     }),
     v.null()
   ),
@@ -46,6 +58,9 @@ export const viewer = query({
       lastExperimentAt: user.lastExperimentAt,
       createdAt: user.createdAt,
       lastActiveAt: user.lastActiveAt,
+      // Stripe subscription fields
+      stripeSubscriptionStatus: user.stripeSubscriptionStatus,
+      stripeCurrentPeriodEnd: user.stripeCurrentPeriodEnd,
     };
   },
 });

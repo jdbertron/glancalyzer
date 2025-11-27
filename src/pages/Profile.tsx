@@ -1,12 +1,57 @@
-import { useQuery } from 'convex/react'
+import { useQuery, useAction } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { useAuth } from '../hooks/useAuth'
-import { User, Mail, Calendar, BarChart3, Crown, Zap } from 'lucide-react'
+import { User, Mail, Calendar, BarChart3, Crown, Zap, CreditCard, ExternalLink, Check } from 'lucide-react'
 import { LoadingSpinner } from '../components/LoadingSpinner'
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import toast from 'react-hot-toast'
 
 export function Profile() {
   const { user, userId } = useAuth()
   const userExperiments = useQuery(api.experiments.getUserExperiments, userId ? { userId } : 'skip')
+  const createCheckoutSession = useAction(api.stripe.createCheckoutSession)
+  const createCustomerPortalSession = useAction(api.stripe.createCustomerPortalSession)
+  
+  const [isUpgrading, setIsUpgrading] = useState<'premium' | 'professional' | null>(null)
+  const [isManaging, setIsManaging] = useState(false)
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  // Handle checkout success/canceled URL params
+  useEffect(() => {
+    const checkoutStatus = searchParams.get('checkout')
+    if (checkoutStatus === 'success') {
+      toast.success('Payment successful! Your subscription is now active.')
+      setSearchParams({})
+    } else if (checkoutStatus === 'canceled') {
+      toast('Checkout canceled. No changes were made to your subscription.')
+      setSearchParams({})
+    }
+  }, [searchParams, setSearchParams])
+
+  const handleUpgrade = async (tier: 'premium' | 'professional') => {
+    setIsUpgrading(tier)
+    try {
+      const { url } = await createCheckoutSession({ tier })
+      window.location.href = url
+    } catch (error) {
+      console.error('Checkout failed:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to start checkout')
+      setIsUpgrading(null)
+    }
+  }
+
+  const handleManageSubscription = async () => {
+    setIsManaging(true)
+    try {
+      const { url } = await createCustomerPortalSession()
+      window.location.href = url
+    } catch (error) {
+      console.error('Portal failed:', error)
+      toast.error(error instanceof Error ? error.message : 'Failed to open billing portal')
+      setIsManaging(false)
+    }
+  }
 
   if (!user) {
     return (
@@ -32,7 +77,7 @@ export function Profile() {
   const pendingExperiments = userExperiments.filter(exp => exp.status === 'pending').length
   const failedExperiments = userExperiments.filter(exp => exp.status === 'failed').length
 
-  const membershipInfo: Record<string, { name: string; color: string; icon: typeof User; maxExperiments: number; features: string[] }> = {
+  const membershipInfo: Record<string, { name: string; color: string; icon: typeof User; maxExperiments: number; features: string[]; price?: string }> = {
     free: {
       name: 'Free',
       color: 'gray',
@@ -45,19 +90,23 @@ export function Profile() {
       color: 'purple',
       icon: Crown,
       maxExperiments: 100,
-      features: ['100 experiments per month', 'Unlimited image retention', 'Eye tracking analysis']
+      price: '$9.99/month',
+      features: ['100 experiments per month', 'Unlimited image retention', 'Eye tracking analysis', 'Email support']
     },
     professional: {
       name: 'Professional',
       color: 'gold',
       icon: Crown,
       maxExperiments: 500,
-      features: ['500 experiments per month', 'Unlimited image retention', 'Eye tracking analysis', 'Priority support']
+      price: '$29.99/month',
+      features: ['500 experiments per month', 'Unlimited image retention', 'Eye tracking analysis', 'Priority support', 'API access']
     }
   }
 
-  const currentMembership = membershipInfo[user.membershipTier || 'free']
+  const currentTier = user.membershipTier || 'free'
+  const currentMembership = membershipInfo[currentTier]
   const MembershipIcon = currentMembership.icon
+  const isPaidUser = currentTier !== 'free'
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
@@ -157,6 +206,91 @@ export function Profile() {
                 </div>
               </div>
             </div>
+
+            {/* Upgrade Options - Show for free users */}
+            {!isPaidUser && (
+              <div className="card">
+                <div className="card-header">
+                  <h2 className="card-title">Upgrade Your Plan</h2>
+                  <p className="card-description">Get more experiments and features</p>
+                </div>
+                <div className="card-content">
+                  <div className="grid md:grid-cols-2 gap-4">
+                    {/* Premium Plan */}
+                    <div className="border border-purple-200 rounded-lg p-4 bg-purple-50 hover:border-purple-400 transition-colors">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center">
+                          <Crown className="h-5 w-5 text-purple-600 mr-2" />
+                          <h3 className="font-semibold text-gray-900">Premium</h3>
+                        </div>
+                        <span className="text-lg font-bold text-purple-600">$9.99/mo</span>
+                      </div>
+                      <ul className="space-y-2 mb-4">
+                        {membershipInfo.premium.features.map((feature, i) => (
+                          <li key={i} className="flex items-center text-sm text-gray-600">
+                            <Check className="h-4 w-4 text-green-500 mr-2 flex-shrink-0" />
+                            {feature}
+                          </li>
+                        ))}
+                      </ul>
+                      <button 
+                        onClick={() => handleUpgrade('premium')}
+                        disabled={isUpgrading !== null}
+                        className="btn btn-primary w-full flex items-center justify-center"
+                      >
+                        {isUpgrading === 'premium' ? (
+                          <>
+                            <LoadingSpinner size="sm" />
+                            <span className="ml-2">Redirecting...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Zap className="h-4 w-4 mr-2" />
+                            Upgrade to Premium
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Professional Plan */}
+                    <div className="border border-yellow-200 rounded-lg p-4 bg-yellow-50 hover:border-yellow-400 transition-colors">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center">
+                          <Crown className="h-5 w-5 text-yellow-600 mr-2" />
+                          <h3 className="font-semibold text-gray-900">Professional</h3>
+                        </div>
+                        <span className="text-lg font-bold text-yellow-600">$29.99/mo</span>
+                      </div>
+                      <ul className="space-y-2 mb-4">
+                        {membershipInfo.professional.features.map((feature, i) => (
+                          <li key={i} className="flex items-center text-sm text-gray-600">
+                            <Check className="h-4 w-4 text-green-500 mr-2 flex-shrink-0" />
+                            {feature}
+                          </li>
+                        ))}
+                      </ul>
+                      <button 
+                        onClick={() => handleUpgrade('professional')}
+                        disabled={isUpgrading !== null}
+                        className="btn btn-secondary w-full flex items-center justify-center border-yellow-400 hover:bg-yellow-100"
+                      >
+                        {isUpgrading === 'professional' ? (
+                          <>
+                            <LoadingSpinner size="sm" />
+                            <span className="ml-2">Redirecting...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Zap className="h-4 w-4 mr-2" />
+                            Upgrade to Professional
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Membership Info */}
@@ -202,6 +336,26 @@ export function Profile() {
                       }}
                     />
                   </div>
+
+                  {/* Subscription status for paid users */}
+                  {isPaidUser && user.stripeSubscriptionStatus && (
+                    <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+                      <p className="text-sm text-gray-600">
+                        Status: <span className={`font-medium ${
+                          user.stripeSubscriptionStatus === 'active' ? 'text-green-600' :
+                          user.stripeSubscriptionStatus === 'past_due' ? 'text-red-600' :
+                          'text-yellow-600'
+                        }`}>
+                          {user.stripeSubscriptionStatus.charAt(0).toUpperCase() + user.stripeSubscriptionStatus.slice(1)}
+                        </span>
+                      </p>
+                      {user.stripeCurrentPeriodEnd && (
+                        <p className="text-sm text-gray-500 mt-1">
+                          Renews: {new Date(user.stripeCurrentPeriodEnd).toLocaleDateString()}
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -223,18 +377,51 @@ export function Profile() {
               </div>
             </div>
 
-            {(user.membershipTier || 'free') === 'free' && (
+            {/* Manage Subscription - Show for paid users */}
+            {isPaidUser && (
+              <div className="card">
+                <div className="card-content">
+                  <h3 className="font-medium text-gray-900 mb-2">
+                    Manage Subscription
+                  </h3>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Update payment method, view invoices, or cancel your subscription
+                  </p>
+                  <button 
+                    onClick={handleManageSubscription}
+                    disabled={isManaging}
+                    className="btn btn-secondary w-full flex items-center justify-center"
+                  >
+                    {isManaging ? (
+                      <>
+                        <LoadingSpinner size="sm" />
+                        <span className="ml-2">Opening...</span>
+                      </>
+                    ) : (
+                      <>
+                        <CreditCard className="h-4 w-4 mr-2" />
+                        Billing Portal
+                        <ExternalLink className="h-3 w-3 ml-2" />
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Upgrade prompt for free users - compact version */}
+            {!isPaidUser && (
               <div className="card border-primary-200 bg-primary-50">
                 <div className="card-content">
                   <h3 className="font-medium text-gray-900 mb-2">
-                    Upgrade Your Plan
+                    Need More Experiments?
                   </h3>
                   <p className="text-sm text-gray-600 mb-4">
-                    Get more experiments and features with a paid plan
+                    Upgrade to unlock more experiments and premium features
                   </p>
-                  <button className="btn btn-primary w-full">
-                    View Plans
-                  </button>
+                  <a href="#upgrade" className="btn btn-primary w-full text-center">
+                    View Plans Above
+                  </a>
                 </div>
               </div>
             )}
