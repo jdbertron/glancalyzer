@@ -1,7 +1,8 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
-import { copyFileSync, mkdirSync, existsSync } from 'fs'
+import { copyFileSync, mkdirSync, existsSync, readFileSync, writeFileSync } from 'fs'
+import { minify } from 'terser'
 
 export default defineConfig({
   plugins: [
@@ -25,18 +26,16 @@ export default defineConfig({
     // Plugin to copy and minify WebGazer dist file (to protect your modifications)
     {
       name: 'copy-and-minify-webgazer',
-      closeBundle() {
+      async closeBundle() {
         const webgazerDist = path.resolve(__dirname, '../WebGazer/dist/webgazer.js')
         const publicDist = path.resolve(__dirname, 'dist/webgazer.js')
         
         if (existsSync(webgazerDist)) {
           // Read the WebGazer file
-          const fs = require('fs')
-          const terser = require('terser')
-          const webgazerCode = fs.readFileSync(webgazerDist, 'utf8')
+          const webgazerCode = readFileSync(webgazerDist, 'utf8')
           
           // Minify WebGazer to protect your modifications
-          const minified = terser.minify(webgazerCode, {
+          const minified = await minify(webgazerCode, {
             compress: {
               passes: 2,
               unsafe: false, // Keep safe to preserve math precision
@@ -61,7 +60,7 @@ export default defineConfig({
             copyFileSync(webgazerDist, publicDist)
             console.log(`[copy-webgazer] Copied WebGazer (unminified due to error)`)
           } else {
-            fs.writeFileSync(publicDist, minified.code)
+            writeFileSync(publicDist, minified.code)
             const originalSize = (webgazerCode.length / 1024 / 1024).toFixed(2)
             const minifiedSize = (minified.code.length / 1024 / 1024).toFixed(2)
             console.log(`[copy-webgazer] Minified WebGazer: ${originalSize}MB → ${minifiedSize}MB`)
