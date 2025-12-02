@@ -190,13 +190,13 @@ export const createExperiment = mutation({
     const callId = Math.random().toString(36).substring(2, 15)
     const timestamp = new Date().toISOString()
     
-    console.log(`🔧 [${callId}] createExperiment called at ${timestamp}`)
-    console.log(`🔧 [${callId}] Args:`, {
-      pictureId: args.pictureId,
-      userId: args.userId,
-      experimentType: args.experimentType,
-      parameters: args.parameters
-    })
+    // console.log(`🔧 [${callId}] createExperiment called at ${timestamp}`)
+    // console.log(`🔧 [${callId}] Args:`, {
+    //   pictureId: args.pictureId,
+    //   userId: args.userId,
+    //   experimentType: args.experimentType,
+    //   parameters: args.parameters
+    // })
     
     // Check for existing experiments for this picture
     const existingExperiments = await ctx.db
@@ -204,20 +204,20 @@ export const createExperiment = mutation({
       .withIndex("by_picture", (q) => q.eq("pictureId", args.pictureId))
       .collect();
     
-    console.log(`🔍 [${callId}] Found ${existingExperiments.length} existing experiments for this picture`)
-    if (existingExperiments.length > 0) {
-      console.log(`🔍 [${callId}] Existing experiments:`, existingExperiments.map(exp => ({
-        id: exp._id,
-        type: exp.experimentType,
-        status: exp.status,
-        createdAt: new Date(exp.createdAt).toISOString()
-      })))
-    }
+    // console.log(`🔍 [${callId}] Found ${existingExperiments.length} existing experiments for this picture`)
+    // if (existingExperiments.length > 0) {
+    //   console.log(`🔍 [${callId}] Existing experiments:`, existingExperiments.map(exp => ({
+    //     id: exp._id,
+    //     type: exp.experimentType,
+    //     status: exp.status,
+    //     createdAt: new Date(exp.createdAt).toISOString()
+    //   })))
+    // }
     
     // Check if picture exists and user has access
     const picture = await ctx.db.get(args.pictureId);
     if (!picture) {
-      console.log(`❌ [${callId}] Picture not found:`, args.pictureId)
+      // console.log(`❌ [${callId}] Picture not found:`, args.pictureId)
       throw new Error("Picture not found");
     }
 
@@ -249,14 +249,14 @@ export const createExperiment = mutation({
         tierConfig
       );
 
-      console.log(`🎯 [${callId}] Allotment check:`, {
-        tier: user.membershipTier,
-        storedAllotment: currentStoredAllotment,
-        lastExperimentAt: user.lastExperimentAt ? new Date(user.lastExperimentAt).toISOString() : 'never',
-        refilledAllotment: refilledAllotment.toFixed(2),
-        maxAllotment: tierConfig.maxAllotment,
-        refillPerDay: tierConfig.refillPerDay,
-      });
+      // console.log(`🎯 [${callId}] Allotment check:`, {
+      //   tier: user.membershipTier,
+      //   storedAllotment: currentStoredAllotment,
+      //   lastExperimentAt: user.lastExperimentAt ? new Date(user.lastExperimentAt).toISOString() : 'never',
+      //   refilledAllotment: refilledAllotment.toFixed(2),
+      //   maxAllotment: tierConfig.maxAllotment,
+      //   refillPerDay: tierConfig.refillPerDay,
+      // });
 
       // Check if user has enough allotment (need at least 1)
       if (refilledAllotment < 1) {
@@ -290,13 +290,13 @@ export const createExperiment = mutation({
       }
       // If no record exists, user gets full allotment (handled by default value above)
 
-      console.log(`🎯 [${callId}] Anonymous allotment check:`, {
-        ipAddress: args.ipAddress,
-        hasExistingRecord: !!anonymousLimitRecord,
-        refilledAllotment: anonymousRefilledAllotment.toFixed(2),
-        maxAllotment: ANONYMOUS_CONFIG.maxAllotment,
-        refillPerDay: ANONYMOUS_CONFIG.refillPerDay,
-      });
+      // console.log(`🎯 [${callId}] Anonymous allotment check:`, {
+      //   ipAddress: args.ipAddress,
+      //   hasExistingRecord: !!anonymousLimitRecord,
+      //   refilledAllotment: anonymousRefilledAllotment.toFixed(2),
+      //   maxAllotment: ANONYMOUS_CONFIG.maxAllotment,
+      //   refillPerDay: ANONYMOUS_CONFIG.refillPerDay,
+      // });
 
       // Check if anonymous user has enough allotment
       if (anonymousRefilledAllotment < 1) {
@@ -309,7 +309,7 @@ export const createExperiment = mutation({
       }
     }
 
-    console.log(`📝 [${callId}] Inserting experiment into database...`)
+    // console.log(`📝 [${callId}] Inserting experiment into database...`)
     const experimentId = await ctx.db.insert("experiments", {
       pictureId: args.pictureId,
       userId: args.userId,
@@ -319,7 +319,7 @@ export const createExperiment = mutation({
       createdAt: Date.now(),
     });
     
-    console.log(`✅ [${callId}] Experiment inserted with ID:`, experimentId)
+    // console.log(`✅ [${callId}] Experiment inserted with ID:`, experimentId)
 
     // Update user's experiment count and allotment
     if (args.userId) {
@@ -337,11 +337,11 @@ export const createExperiment = mutation({
         );
         const newAllotment = Math.max(0, refilledAllotment - 1);
 
-        console.log(`📊 [${callId}] Updating user allotment:`, {
-          previousStored: currentStoredAllotment,
-          afterRefill: refilledAllotment.toFixed(2),
-          afterDeduction: newAllotment.toFixed(2),
-        });
+        // console.log(`📊 [${callId}] Updating user allotment:`, {
+        //   previousStored: currentStoredAllotment,
+        //   afterRefill: refilledAllotment.toFixed(2),
+        //   afterDeduction: newAllotment.toFixed(2),
+        // });
 
         await ctx.db.patch(args.userId, {
           experimentCount: (user.experimentCount ?? 0) + 1, // Lifetime count (for analytics)
@@ -355,11 +355,11 @@ export const createExperiment = mutation({
     if (!args.userId && args.ipAddress) {
       const newAllotment = Math.max(0, anonymousRefilledAllotment - 1);
 
-      console.log(`📊 [${callId}] Updating anonymous allotment:`, {
-        ipAddress: args.ipAddress,
-        afterRefill: anonymousRefilledAllotment.toFixed(2),
-        afterDeduction: newAllotment.toFixed(2),
-      });
+      // console.log(`📊 [${callId}] Updating anonymous allotment:`, {
+      //   ipAddress: args.ipAddress,
+      //   afterRefill: anonymousRefilledAllotment.toFixed(2),
+      //   afterDeduction: newAllotment.toFixed(2),
+      // });
 
       if (anonymousLimitRecord) {
         // Update existing record

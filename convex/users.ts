@@ -17,7 +17,7 @@ export const debugManualVerify = query({
       }
       
       const sessionUserId = (session as any).userId;
-      console.log('[debugManualVerify] Session userId:', sessionUserId);
+      // console.log('[debugManualVerify] Session userId:', sessionUserId);
       
       // Get the account for this user
       const accounts = await ctx.db
@@ -25,27 +25,27 @@ export const debugManualVerify = query({
         .filter((q) => q.eq(q.field("userId"), sessionUserId))
         .collect();
       
-      console.log('[debugManualVerify] Accounts found:', accounts.length);
+      // console.log('[debugManualVerify] Accounts found:', accounts.length);
       if (accounts.length === 0) {
         return { error: 'No account found for user' };
       }
       
       const account = accounts[0];
       const provider = (account as any).provider;
-      console.log('[debugManualVerify] Account provider:', provider);
+      // console.log('[debugManualVerify] Account provider:', provider);
       
       // Try to use auth.getUserId with the session context
       // This should work if the provider is configured correctly
       try {
         const authUserId = await auth.getUserId(ctx);
-        console.log('[debugManualVerify] auth.getUserId returned:', authUserId);
+        // console.log('[debugManualVerify] auth.getUserId returned:', authUserId);
       } catch (e) {
-        console.log('[debugManualVerify] auth.getUserId error:', e);
+        // console.log('[debugManualVerify] auth.getUserId error:', e);
       }
       
       // Check if we can get the user
       const user = await ctx.db.get(sessionUserId);
-      console.log('[debugManualVerify] User found:', !!user);
+      // console.log('[debugManualVerify] User found:', !!user);
       
       return {
         session,
@@ -57,7 +57,7 @@ export const debugManualVerify = query({
         canVerify: sessionUserId !== null && accounts.length > 0,
       };
     } catch (e) {
-      console.log('[debugManualVerify] Error:', e);
+      // console.log('[debugManualVerify] Error:', e);
       return { error: String(e) };
     }
   },
@@ -71,28 +71,28 @@ export const getCurrentUserId = query({
     // Use getAuthUserId from @convex-dev/auth/server (the correct way)
     const userId = await getAuthUserId(ctx);
     const sessionId = await getAuthSessionId(ctx);
-    console.log('[getCurrentUserId] getAuthUserId returned:', userId);
-    console.log('[getCurrentUserId] getAuthSessionId returned:', sessionId);
+    // console.log('[getCurrentUserId] getAuthUserId returned:', userId);
+    // console.log('[getCurrentUserId] getAuthSessionId returned:', sessionId);
     
     if (userId === null) {
       // Debug: Check if standard Convex auth has the identity
       const identity = await ctx.auth.getUserIdentity();
-      console.log('[getCurrentUserId] ctx.auth.getUserIdentity() returned:', identity);
-      console.log('[getCurrentUserId] No authenticated user found - session may not be established');
+      // console.log('[getCurrentUserId] ctx.auth.getUserIdentity() returned:', identity);
+      // console.log('[getCurrentUserId] No authenticated user found - session may not be established');
       
       // Check if there are any sessions in the database
       try {
         const allSessions = await ctx.db.query("authSessions").collect();
-        console.log('[getCurrentUserId] Total sessions in database:', allSessions.length);
+        // console.log('[getCurrentUserId] Total sessions in database:', allSessions.length);
         if (allSessions.length > 0) {
-          console.log('[getCurrentUserId] Recent sessions:', allSessions.slice(-3).map(s => ({
-            _id: s._id,
-            userId: (s as any).userId,
-            expiresAt: (s as any).expiresAt
-          })));
+          // console.log('[getCurrentUserId] Recent sessions:', allSessions.slice(-3).map(s => ({
+          //   _id: s._id,
+          //   userId: (s as any).userId,
+          //   expiresAt: (s as any).expiresAt
+          // })));
         }
       } catch (e) {
-        console.log('[getCurrentUserId] Could not query sessions:', e);
+        // console.log('[getCurrentUserId] Could not query sessions:', e);
       }
     }
     
@@ -137,16 +137,16 @@ export const viewer = query({
   handler: async (ctx) => {
     // Use getAuthUserId from @convex-dev/auth/server (the correct way)
     const userId = await getAuthUserId(ctx);
-    console.log('[viewer] getAuthUserId returned:', userId);
+    // console.log('[viewer] getAuthUserId returned:', userId);
     
     if (userId === null) {
-      console.log('[viewer] No authenticated user - returning null');
+      // console.log('[viewer] No authenticated user - returning null');
       return null;
     }
     
     const user = await ctx.db.get(userId);
     if (!user) {
-      console.log('[viewer] User not found in database for userId:', userId);
+      // console.log('[viewer] User not found in database for userId:', userId);
       return null;
     }
 
@@ -429,7 +429,7 @@ export const debugSessions = query({
   handler: async (ctx) => {
     try {
       const allSessions = await ctx.db.query("authSessions").collect();
-      console.log('[debugSessions] Total sessions:', allSessions.length);
+      // console.log('[debugSessions] Total sessions:', allSessions.length);
       const sessionsWithDetails = allSessions.map(s => ({
         _id: s._id,
         userId: (s as any).userId,
@@ -441,10 +441,10 @@ export const debugSessions = query({
         // Log all fields to see what's available
         allFields: s,
       }));
-      console.log('[debugSessions] Sessions with details:', JSON.stringify(sessionsWithDetails, null, 2));
+      // console.log('[debugSessions] Sessions with details:', JSON.stringify(sessionsWithDetails, null, 2));
       return sessionsWithDetails;
     } catch (e) {
-      console.log('[debugSessions] Error:', e);
+      // console.log('[debugSessions] Error:', e);
       return [];
     }
   },
@@ -457,7 +457,7 @@ export const debugAuthAccounts = query({
   handler: async (ctx) => {
     try {
       const allAccounts = await ctx.db.query("authAccounts").collect();
-      console.log('[debugAuthAccounts] Total accounts:', allAccounts.length);
+      // console.log('[debugAuthAccounts] Total accounts:', allAccounts.length);
       const accountsWithDetails = allAccounts.map(a => ({
         _id: a._id,
         userId: (a as any).userId,
@@ -466,10 +466,10 @@ export const debugAuthAccounts = query({
         // Log all fields
         allFields: a,
       }));
-      console.log('[debugAuthAccounts] Accounts with details:', JSON.stringify(accountsWithDetails, null, 2));
+      // console.log('[debugAuthAccounts] Accounts with details:', JSON.stringify(accountsWithDetails, null, 2));
       return accountsWithDetails;
     } catch (e) {
-      console.log('[debugAuthAccounts] Error:', e);
+      // console.log('[debugAuthAccounts] Error:', e);
       return [];
     }
   },
@@ -483,23 +483,23 @@ export const debugAuthIdentity = query({
     try {
       // Get the raw identity from Convex
       const identity = await ctx.auth.getUserIdentity();
-      console.log('[debugAuthIdentity] ctx.auth.getUserIdentity() returned:', identity);
+      // console.log('[debugAuthIdentity] ctx.auth.getUserIdentity() returned:', identity);
       
       // Try to get auth user ID
       const userId = await getAuthUserId(ctx);
-      console.log('[debugAuthIdentity] getAuthUserId returned:', userId);
+      // console.log('[debugAuthIdentity] getAuthUserId returned:', userId);
       
       // Try to get session ID
       const sessionId = await getAuthSessionId(ctx);
-      console.log('[debugAuthIdentity] getAuthSessionId returned:', sessionId);
+      // console.log('[debugAuthIdentity] getAuthSessionId returned:', sessionId);
       
       // Check if we can access the auth object
       try {
         // Try to use auth.getUserId directly
         const authUserId = await auth.getUserId(ctx);
-        console.log('[debugAuthIdentity] auth.getUserId returned:', authUserId);
+        // console.log('[debugAuthIdentity] auth.getUserId returned:', authUserId);
       } catch (e) {
-        console.log('[debugAuthIdentity] auth.getUserId error:', e);
+        // console.log('[debugAuthIdentity] auth.getUserId error:', e);
       }
       
       // Check what providers are configured
@@ -507,14 +507,14 @@ export const debugAuthIdentity = query({
         // Try to inspect the auth configuration
         const allSessions = await ctx.db.query("authSessions").collect();
         const allAccounts = await ctx.db.query("authAccounts").collect();
-        console.log('[debugAuthIdentity] Sessions count:', allSessions.length);
-        console.log('[debugAuthIdentity] Accounts count:', allAccounts.length);
+        // console.log('[debugAuthIdentity] Sessions count:', allSessions.length);
+        // console.log('[debugAuthIdentity] Accounts count:', allAccounts.length);
         if (allAccounts.length > 0) {
           const account = allAccounts[0];
-          console.log('[debugAuthIdentity] First account provider:', (account as any).provider);
+          // console.log('[debugAuthIdentity] First account provider:', (account as any).provider);
         }
       } catch (e) {
-        console.log('[debugAuthIdentity] Error checking sessions/accounts:', e);
+        // console.log('[debugAuthIdentity] Error checking sessions/accounts:', e);
       }
       
       return {
@@ -525,7 +525,7 @@ export const debugAuthIdentity = query({
         identityProvider: identity?.providerId,
       };
     } catch (e) {
-      console.log('[debugAuthIdentity] Error:', e);
+      // console.log('[debugAuthIdentity] Error:', e);
       return { error: String(e) };
     }
   },
@@ -545,7 +545,7 @@ export const debugVerifySession = query({
         sessionId = await getAuthSessionId(ctx);
       }
       
-      console.log('[debugVerifySession] Testing with sessionId:', sessionId);
+      // console.log('[debugVerifySession] Testing with sessionId:', sessionId);
       
       if (!sessionId) {
         return { error: 'No session ID available' };
@@ -553,7 +553,7 @@ export const debugVerifySession = query({
       
       // Get the session from the database
       const session = await ctx.db.get(sessionId);
-      console.log('[debugVerifySession] Session from DB:', session);
+      // console.log('[debugVerifySession] Session from DB:', session);
       
       if (!session) {
         return { error: 'Session not found in database' };
@@ -561,11 +561,11 @@ export const debugVerifySession = query({
       
       // Try to get the user ID using the session
       const userId = await getAuthUserId(ctx);
-      console.log('[debugVerifySession] getAuthUserId returned:', userId);
+      // console.log('[debugVerifySession] getAuthUserId returned:', userId);
       
       // Check if the session's userId matches
       const sessionUserId = (session as any).userId;
-      console.log('[debugVerifySession] Session userId:', sessionUserId);
+      // console.log('[debugVerifySession] Session userId:', sessionUserId);
       
       // Try to get the account for this user
       if (sessionUserId) {
@@ -573,10 +573,10 @@ export const debugVerifySession = query({
           .query("authAccounts")
           .filter((q) => q.eq(q.field("userId"), sessionUserId))
           .collect();
-        console.log('[debugVerifySession] Accounts for user:', accounts);
+        // console.log('[debugVerifySession] Accounts for user:', accounts);
         if (accounts.length > 0) {
           const account = accounts[0];
-          console.log('[debugVerifySession] Account provider:', (account as any).provider);
+          // console.log('[debugVerifySession] Account provider:', (account as any).provider);
         }
       }
       
@@ -588,7 +588,7 @@ export const debugVerifySession = query({
         match: userId === sessionUserId,
       };
     } catch (e) {
-      console.log('[debugVerifySession] Error:', e);
+      // console.log('[debugVerifySession] Error:', e);
       return { error: String(e) };
     }
   },
@@ -635,30 +635,30 @@ export const getViewerFromSessionId = query({
     try {
       const session = await ctx.db.get(args.sessionId);
       if (!session) {
-        console.log('[getViewerFromSessionId] Session not found:', args.sessionId);
+        // console.log('[getViewerFromSessionId] Session not found:', args.sessionId);
         return null;
       }
       
       const sessionUserId = (session as any).userId;
       if (!sessionUserId) {
-        console.log('[getViewerFromSessionId] Session has no userId');
+        // console.log('[getViewerFromSessionId] Session has no userId');
         return null;
       }
       
       // Check if session is expired
       const expirationTime = (session as any).expirationTime;
       if (expirationTime && expirationTime < Date.now()) {
-        console.log('[getViewerFromSessionId] Session expired');
+        // console.log('[getViewerFromSessionId] Session expired');
         return null;
       }
       
       const user = await ctx.db.get(sessionUserId);
       if (!user) {
-        console.log('[getViewerFromSessionId] User not found for userId:', sessionUserId);
+        // console.log('[getViewerFromSessionId] User not found for userId:', sessionUserId);
         return null;
       }
       
-      console.log('[getViewerFromSessionId] Successfully verified session and returning user');
+      // console.log('[getViewerFromSessionId] Successfully verified session and returning user');
       return {
         _id: user._id,
         email: user.email,
@@ -674,7 +674,7 @@ export const getViewerFromSessionId = query({
         stripeCurrentPeriodEnd: user.stripeCurrentPeriodEnd,
       };
     } catch (e) {
-      console.log('[getViewerFromSessionId] Error:', e);
+      // console.log('[getViewerFromSessionId] Error:', e);
       return null;
     }
   },
