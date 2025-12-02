@@ -1,9 +1,10 @@
-import { useQuery } from 'convex/react'
+import { useQuery, useMutation } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { useAuth } from '../hooks/useAuth'
 import { Link } from 'react-router-dom'
 import { Upload, BarChart3, Image, Clock, CheckCircle } from 'lucide-react'
 import { LoadingSpinner } from '../components/LoadingSpinner'
+import { useEffect } from 'react'
 
 // Component for individual experiment item with thumbnail - compact one-line version
 function ExperimentItem({ experiment }: { experiment: any }) {
@@ -66,7 +67,30 @@ function ExperimentItem({ experiment }: { experiment: any }) {
 }
 
 export function Dashboard() {
-  const { user, userId } = useAuth()
+  const { user, userId, isLoading, isAuthenticated } = useAuth()
+  const initializeProfile = useMutation(api.users.initializeProfile)
+  
+  // Get authUserId directly to check if query is still loading
+  const authUserId = useQuery(api.users.getCurrentUserId)
+  
+  // Also check userId as an alternative auth indicator (in case isAuthenticated has timing issues)
+  // But wait for authUserId query to complete first (undefined = still loading)
+  const isActuallyAuthenticated = isAuthenticated || !!userId
+  const authStillLoading = authUserId === undefined
+  
+  // Debug logging (remove after fixing)
+  useEffect(() => {
+    console.log('Dashboard auth state:', {
+      isAuthenticated,
+      userId,
+      authUserId,
+      user: user?._id,
+      isLoading,
+      authStillLoading,
+      isActuallyAuthenticated
+    })
+  }, [isAuthenticated, userId, authUserId, user, isLoading, authStillLoading, isActuallyAuthenticated])
+  
   // Get user's pictures from direct uploads
   const userPictures = useQuery(api.pictures.getUserPictures, userId ? { userId } : 'skip')
   // Get pictures from experiments
@@ -75,6 +99,13 @@ export function Dashboard() {
     userId ? { userId } : 'skip'
   )
   const experiments = useQuery(api.experiments.getUserExperiments, userId ? { userId } : 'skip')
+
+  // If authenticated but user is null, try to initialize profile
+  useEffect(() => {
+    if ((isAuthenticated || userId) && userId && user === null) {
+      initializeProfile().catch(console.error)
+    }
+  }, [isAuthenticated, userId, user, initializeProfile])
 
   // Combine both sources: direct user pictures + pictures from experiments
   // Deduplicate by _id, preferring direct user pictures (they have more complete data)
@@ -97,21 +128,117 @@ export function Dashboard() {
     return combined.sort((a, b) => b.uploadedAt - a.uploadedAt)
   })()
 
-  // Handle case where user query might have failed (e.g., validation error)
-  // If userId exists but user query completed and returned null, there's likely an error
-  // Note: user will be undefined while loading, null if query completed but user not found
-  // We check this after the loading check to avoid false positives during initial load
+  // Show loading spinner while auth state is being determined
+  // Wait for both isLoading and authUserId query to complete
+  if (isLoading || authStillLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <LoadingSpinner size="lg" />
+      </div>
+    )
+  }
 
+  // Only show login prompt if not authenticated AND no userId AND auth query completed
+  // Use isActuallyAuthenticated which checks both isAuthenticated and userId
+  // But also check if we have a userId from auth even if isAuthenticated is false (timing issue)
+  if (!isActuallyAuthenticated && !authStillLoading && authUserId === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center max-w-md">
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">
+            Please log in to access your dashboard
+          </h2>
+          <p className="text-sm text-gray-500 mb-4">
+            It looks like your session wasn't established. This might be a configuration issue.
+          </p>
+          <p className="text-xs text-gray-400 mb-4">
+            Debug: isAuthenticated={String(isAuthenticated)}, userId={userId || 'null'}, authUserId={authUserId || 'null'}
+          </p>
+          <div className="space-y-2">
+            <Link to="/login" className="btn btn-primary block">
+              Sign In
+            </Link>
+            <button
+              onClick={() => window.location.reload()}
+              className="btn btn-outline block w-full"
+            >
+              Refresh Page
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+  
+  // If we have a userId but user data is still loading, show loading
+  // This handles the case where auth succeeded but user query hasn't completed
+  if (userId && !user && user !== null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <LoadingSpinner size="lg" />
+      </div>
+    )
+  }
+
+  // If authenticated but user data is still loading, show loading spinner
+  if (user === undefined) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <LoadingSpinner size="lg" />
+      </div>
+    )
+  }
+
+  // If authenticated but user query returned null, try to create/initialize the user record
+  // This can happen if the user record was deleted but auth session still exists
+  if (user === null && userId) {
+    // Keep trying to initialize - the user record should exist from Convex Auth
+    // but might need our app-specific fields initialized
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <LoadingSpinner size="lg" />
+          <p className="mt-4 text-gray-600">Setting up your account...</p>
+          <p className="mt-2 text-sm text-gray-500">
+            If this takes too long, please refresh the page.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // If we don't have user data yet but we're authenticated, show loading
+  // (user will be undefined while the query is loading)
+  if (!user && isActuallyAuthenticated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <LoadingSpinner size="lg" />
+      </div>
+    )
+  }
+
+  // If we still don't have user, something is wrong
   if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
           <h2 className="text-2xl font-bold text-gray-900 mb-4">
-            Please log in to access your dashboard
+            Unable to load user data
           </h2>
-          <Link to="/login" className="btn btn-primary">
-            Sign In
-          </Link>
+          <p className="text-gray-600 mb-4">
+            Please try refreshing the page or logging out and back in.
+          </p>
+          <div className="space-x-4">
+            <button
+              onClick={() => window.location.reload()}
+              className="btn btn-primary"
+            >
+              Refresh Page
+            </button>
+            <Link to="/login" className="btn btn-outline">
+              Back to Login
+            </Link>
+          </div>
         </div>
       </div>
     )
@@ -126,13 +253,14 @@ export function Dashboard() {
   }
 
   const recentExperiments = experiments.slice(0, 5)
+  const displayName = user?.name || user?.email || 'User'
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            Welcome back, {user.name || user.email}!
+            Welcome back, {displayName}!
           </h1>
           <p className="text-gray-600">
             Here's an overview of your pictures and experiments
@@ -171,7 +299,7 @@ export function Dashboard() {
                 <Clock className="h-8 w-8 text-yellow-600" />
                 <div className="ml-4">
                   <p className="text-sm font-medium text-gray-500">Membership</p>
-                  <p className="text-lg font-bold text-gray-900 capitalize">{user.membershipTier}</p>
+                  <p className="text-lg font-bold text-gray-900 capitalize">{user?.membershipTier || 'free'}</p>
                 </div>
               </div>
             </div>

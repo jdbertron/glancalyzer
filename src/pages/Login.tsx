@@ -1,15 +1,30 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
-import { Mail, Lock, ArrowLeft, Eye, EyeOff } from 'lucide-react'
+import { Mail, Lock, ArrowLeft, Eye, EyeOff, Home } from 'lucide-react'
+import toast from 'react-hot-toast'
 
 export function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  const { login } = useAuth()
+  const { login, isAuthenticated, userId, user } = useAuth()
   const navigate = useNavigate()
+
+  // Debug logging
+  useEffect(() => {
+    console.log('Login page auth state:', { isAuthenticated, userId, user: user?._id })
+  }, [isAuthenticated, userId, user])
+
+  // Redirect if already authenticated (check isAuthenticated, userId, or user)
+  // Note: This is a fallback - the main redirect happens after sign-in via page reload
+  useEffect(() => {
+    if (isAuthenticated || userId || user) {
+      console.log('Redirecting to dashboard - authenticated')
+      navigate('/dashboard')
+    }
+  }, [isAuthenticated, userId, user, navigate])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -17,10 +32,16 @@ export function Login() {
 
     try {
       await login(email, password)
-      navigate('/dashboard')
+      // signIn() stores the token in localStorage
+      // The useAuth hook will extract the sessionId from the token and use it
+      // to query getViewerFromSessionId, which bypasses the WebSocket auth issue
+      console.log('Sign-in successful, waiting for auth state to update...')
+      // Reset loading state - the useEffect watching isAuthenticated/userId/user will handle navigation
+      setIsLoading(false)
     } catch (error) {
-      // Error is handled in the hook
-    } finally {
+      // If sign-in fails (wrong password, etc.), login() throws an error
+      // Error is handled in the hook (toast notification shown)
+      // Stay on login page, don't navigate - user can try again
       setIsLoading(false)
     }
   }
@@ -29,10 +50,21 @@ export function Login() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
         <div>
-          <Link to="/" className="flex items-center text-primary-600 hover:text-primary-500 mb-6">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to home
-          </Link>
+          <div className="flex items-center justify-between mb-6">
+            <Link to="/" className="flex items-center text-primary-600 hover:text-primary-500">
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to home
+            </Link>
+            {(isAuthenticated || userId || user) && (
+              <Link
+                to="/dashboard"
+                className="btn btn-primary btn-sm flex items-center space-x-2"
+              >
+                <Home className="h-4 w-4" />
+                <span>Dashboard</span>
+              </Link>
+            )}
+          </div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
             Sign in to your account
           </h2>

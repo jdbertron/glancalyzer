@@ -8,7 +8,8 @@ import {
   Calendar,
   FileText,
   Download,
-  Trash2
+  Trash2,
+  Palette
 } from 'lucide-react'
 
 interface PictureCardProps {
@@ -21,11 +22,12 @@ interface PictureCardProps {
     experimentCount: number
   }
   onAnalyzeFocus: (pictureId: string) => void
+  onValueStudy?: (pictureId: string) => void
   onDelete?: (pictureId: string) => void
   isDeleting?: boolean
 }
 
-export function PictureCard({ picture, onAnalyzeFocus, onDelete, isDeleting = false }: PictureCardProps) {
+export function PictureCard({ picture, onAnalyzeFocus, onValueStudy, onDelete, isDeleting = false }: PictureCardProps) {
   const imageUrl = useQuery(api.pictures.getImageUrl, { fileId: picture.fileId })
 
   const formatDate = (timestamp: number) => {
@@ -89,6 +91,16 @@ export function PictureCard({ picture, onAnalyzeFocus, onDelete, isDeleting = fa
               <Eye className="h-4 w-4" />
               <span>Analyze Focus Areas</span>
             </button>
+            
+            {onValueStudy && (
+              <button
+                onClick={() => onValueStudy(picture._id)}
+                className="btn btn-outline btn-sm w-full flex items-center justify-center space-x-2"
+              >
+                <Palette className="h-4 w-4" />
+                <span>Value Study</span>
+              </button>
+            )}
             
             <Link
               to="/dashboard"

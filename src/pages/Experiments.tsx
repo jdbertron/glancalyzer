@@ -156,6 +156,14 @@ export function Experiments() {
       return
     }
 
+    // Special handling for Value Study experiments
+    if (newExperimentType === 'Value Study') {
+      navigate(`/value-study-experiment?pictureId=${selectedPicture}`)
+      setShowCreateExperiment(false)
+      setNewExperimentType('')
+      return
+    }
+
     try {
       await createExperiment({
         pictureId: selectedPicture as any,
@@ -256,6 +264,7 @@ export function Experiments() {
     : experiments
 
   const experimentTypes = [
+    'Value Study',
     'Eye Tracking',
     'Object Detection',
     'Sentiment Analysis',

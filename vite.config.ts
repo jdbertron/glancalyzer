@@ -22,17 +22,50 @@ export default defineConfig({
         return null
       }
     },
-    // Plugin to copy WebGazer dist files to public so they can be loaded as separate scripts
+    // Plugin to copy and minify WebGazer dist file (to protect your modifications)
     {
-      name: 'copy-webgazer-dist',
+      name: 'copy-and-minify-webgazer',
       closeBundle() {
-        // Copy WebGazer's built dist file to public so it can be loaded separately
         const webgazerDist = path.resolve(__dirname, '../WebGazer/dist/webgazer.js')
         const publicDist = path.resolve(__dirname, 'dist/webgazer.js')
         
         if (existsSync(webgazerDist)) {
-          copyFileSync(webgazerDist, publicDist)
-          console.log(`[copy-webgazer] Copied WebGazer dist to ${publicDist}`)
+          // Read the WebGazer file
+          const fs = require('fs')
+          const terser = require('terser')
+          const webgazerCode = fs.readFileSync(webgazerDist, 'utf8')
+          
+          // Minify WebGazer to protect your modifications
+          const minified = terser.minify(webgazerCode, {
+            compress: {
+              passes: 2,
+              unsafe: false, // Keep safe to preserve math precision
+              unsafe_math: false, // Critical: preserve Float64 precision
+              unsafe_methods: false,
+              unsafe_proto: false,
+              unsafe_regexp: false,
+              keep_infinity: true
+            },
+            mangle: {
+              toplevel: false, // Don't mangle top-level (might break UMD exports)
+              reserved: ['webgazer'] // Preserve the webgazer global
+            },
+            format: {
+              comments: false
+            }
+          })
+          
+          if (minified.error) {
+            console.error('[copy-webgazer] Minification error:', minified.error)
+            // Fallback to unminified
+            copyFileSync(webgazerDist, publicDist)
+            console.log(`[copy-webgazer] Copied WebGazer (unminified due to error)`)
+          } else {
+            fs.writeFileSync(publicDist, minified.code)
+            const originalSize = (webgazerCode.length / 1024 / 1024).toFixed(2)
+            const minifiedSize = (minified.code.length / 1024 / 1024).toFixed(2)
+            console.log(`[copy-webgazer] Minified WebGazer: ${originalSize}MB → ${minifiedSize}MB`)
+          }
         } else {
           console.warn(`[copy-webgazer] WebGazer dist not found at ${webgazerDist}`)
         }

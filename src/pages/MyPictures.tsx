@@ -186,6 +186,9 @@ export function MyPictures() {
                   onAnalyzeFocus={(pictureId) => {
                     navigate(`/eye-tracking-experiment?pictureId=${pictureId}`)
                   }}
+                  onValueStudy={(pictureId) => {
+                    navigate(`/value-study-experiment?pictureId=${pictureId}`)
+                  }}
                   onDelete={handleDelete}
                   isDeleting={deletingPictureId === picture._id}
                 />

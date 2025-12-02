@@ -667,6 +667,64 @@ export const updateEyeTrackingResults = mutation({
   },
 });
 
+// Update experiment with Value Study results
+export const updateValueStudyResults = mutation({
+  args: {
+    experimentId: v.id("experiments"),
+    results: v.object({
+      processedImageDataUrl: v.string(), // Base64 data URL
+      metadata: v.object({
+        width: v.number(),
+        height: v.number(),
+        diagonal: v.number(),
+        originalFormat: v.string(),
+      }),
+      parameters: v.object({
+        levels: v.number(),
+        smoothness: v.number(),
+        useMedianBlur: v.optional(v.boolean()), // Default: false (uses mean curvature blur, faster with GPU)
+        meanCurvaturePasses: v.optional(v.number()),
+      }),
+    }),
+    status: v.union(
+      v.literal("completed"),
+      v.literal("failed")
+    ),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    message: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    const experiment = await ctx.db.get(args.experimentId);
+    if (!experiment) {
+      return {
+        success: false,
+        message: "Experiment not found",
+      };
+    }
+
+    // Validate that this is a Value Study experiment
+    if (experiment.experimentType !== "Value Study") {
+      return {
+        success: false,
+        message: "This experiment is not a Value Study experiment",
+      };
+    }
+
+    await ctx.db.patch(args.experimentId, {
+      results: args.results,
+      status: args.status,
+      completedAt: Date.now(),
+    });
+
+    return {
+      success: true,
+      message: "Value Study results updated successfully",
+    };
+  },
+});
+
 // Get experiment details
 export const getExperiment = query({
   args: {
@@ -741,6 +799,52 @@ export const getExperiment = query({
       createdAt: experiment.createdAt,
       completedAt: experiment.completedAt,
     };
+  },
+});
+
+// Get most recent calibration data for a user
+export const getMostRecentCalibration = query({
+  args: {
+    userId: v.optional(v.id("users")),
+  },
+  returns: v.union(
+    v.object({
+      experimentId: v.id("experiments"),
+      calibrationData: v.any(),
+      createdAt: v.number(),
+    }),
+    v.null()
+  ),
+  handler: async (ctx, args) => {
+    if (!args.userId) {
+      return null
+    }
+
+    // Find the most recent completed eye tracking experiment with calibration data
+    const experiments = await ctx.db
+      .query("experiments")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId!))
+      .filter((q) => 
+        q.and(
+          q.eq(q.field("experimentType"), "Eye Tracking"),
+          q.eq(q.field("status"), "completed")
+        )
+      )
+      .order("desc")
+      .collect()
+
+    // Find the first experiment with calibration data
+    for (const experiment of experiments) {
+      if (experiment.eyeTrackingData?.calibrationData) {
+        return {
+          experimentId: experiment._id,
+          calibrationData: experiment.eyeTrackingData.calibrationData,
+          createdAt: experiment.createdAt,
+        }
+      }
+    }
+
+    return null
   },
 });
 

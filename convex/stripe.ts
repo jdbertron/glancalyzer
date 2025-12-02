@@ -8,6 +8,7 @@ import { action } from "./_generated/server";
 import { internal } from "./_generated/api";
 import Stripe from "stripe";
 import { auth } from "./auth";
+import { getAuthUserId } from "@convex-dev/auth/server";
 
 // Initialize Stripe with the secret key from environment variables
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -34,7 +35,7 @@ export const createCheckoutSession = action({
   }),
   handler: async (ctx, args) => {
     // Get the authenticated user
-    const userId = await auth.getUserId(ctx);
+    const userId = await getAuthUserId(ctx);
     if (!userId) {
       throw new Error("You must be logged in to upgrade your subscription");
     }
@@ -117,7 +118,7 @@ export const createCustomerPortalSession = action({
   }),
   handler: async (ctx) => {
     // Get the authenticated user
-    const userId = await auth.getUserId(ctx);
+    const userId = await getAuthUserId(ctx);
     if (!userId) {
       throw new Error("You must be logged in to manage your subscription");
     }

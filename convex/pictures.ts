@@ -145,6 +145,7 @@ export const getUserPictures = query({
       .collect();
 
     // Get experiment count for each picture
+    // Explicitly construct return objects to match validator (exclude _creationTime and other extra fields)
     const picturesWithCounts = await Promise.all(
       pictures.map(async (picture) => {
         const experiments = await ctx.db
@@ -153,7 +154,11 @@ export const getUserPictures = query({
           .collect();
 
         return {
-          ...picture,
+          _id: picture._id,
+          fileName: picture.fileName,
+          fileId: picture.fileId,
+          uploadedAt: picture.uploadedAt,
+          fileSize: picture.fileSize,
           experimentCount: experiments.length,
         };
       })

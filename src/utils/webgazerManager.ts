@@ -977,6 +977,55 @@ class WebGazerManager {
     
     if (this.webgazer) {
       this.webgazer.saveDataAcrossSessions(enabled)
+      
+      // If enabling, force a save by triggering WebGazer's save mechanism
+      // WebGazer saves asynchronously, so we need to give it time
+      if (enabled) {
+        // Force WebGazer to save by accessing its internal save mechanism
+        // This ensures the calibration data is written to IndexedDB
+        const wgAny = this.webgazer as any
+        if (wgAny.save && typeof wgAny.save === 'function') {
+          try {
+            wgAny.save()
+            console.log('💾 [WebGazerManager] Triggered WebGazer save to IndexedDB')
+          } catch (error) {
+            console.log('ℹ️ [WebGazerManager] WebGazer save method not available or failed:', error)
+          }
+        }
+      }
+    }
+  }
+  
+  // Force save calibration data to IndexedDB (waits for save to complete)
+  async forceSaveCalibration(): Promise<void> {
+    if (!this.webgazer) return
+    
+    console.log('💾 [WebGazerManager] Forcing calibration save to IndexedDB...')
+    
+    // Ensure saveDataAcrossSessions is enabled
+    this.webgazer.saveDataAcrossSessions(true)
+    
+    // Try to trigger WebGazer's save mechanism
+    const wgAny = this.webgazer as any
+    if (wgAny.save && typeof wgAny.save === 'function') {
+      try {
+        await wgAny.save()
+        console.log('✅ [WebGazerManager] Calibration save triggered')
+      } catch (error) {
+        console.log('ℹ️ [WebGazerManager] WebGazer save method not available:', error)
+      }
+    }
+    
+    // Wait a bit for IndexedDB write to complete
+    // IndexedDB writes are asynchronous, so we give it time
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    
+    // Verify the save by checking if data exists in IndexedDB
+    const hasData = await this.checkForExistingCalibration()
+    if (hasData) {
+      console.log('✅ [WebGazerManager] Calibration data confirmed in IndexedDB')
+    } else {
+      console.warn('⚠️ [WebGazerManager] Calibration data not yet in IndexedDB (may still be saving)')
     }
   }
 
@@ -1397,6 +1446,120 @@ class WebGazerManager {
   // Get last calibration result (for restoring state after pause)
   getLastCalibrationResult(): CalibrationResult | null {
     return this.lastCalibrationResult
+  }
+
+  // Extract calibration data from WebGazer for saving to database
+  extractCalibrationData(): any | null {
+    if (!this.webgazer) return null
+    
+    const wgAny = this.webgazer as any
+    const calibrationData: any = {}
+    
+    // Extract regression model coefficients
+    if (wgAny.ridge?.regression?.beta && Array.isArray(wgAny.ridge.regression.beta)) {
+      calibrationData.regressionBeta = wgAny.ridge.regression.beta
+      calibrationData.regressionWeights = wgAny.ridge.regression.weights || []
+      if (wgAny.ridge.regression.X) calibrationData.regressionX = wgAny.ridge.regression.X
+      if (wgAny.ridge.regression.y) calibrationData.regressionY = wgAny.ridge.regression.y
+    } else if (wgAny.ridge?.beta && Array.isArray(wgAny.ridge.beta)) {
+      calibrationData.regressionBeta = wgAny.ridge.beta
+    }
+    
+    // Extract calibration points if available
+    if (wgAny.ridge?.calibrationPoints) {
+      calibrationData.calibrationPoints = wgAny.ridge.calibrationPoints
+    }
+    
+    // Extract stored data if available
+    if (wgAny.ridge?.storedData) {
+      calibrationData.storedData = wgAny.ridge.storedData
+    }
+    
+    // Include calibration result metadata
+    if (this.lastCalibrationResult) {
+      calibrationData.result = this.lastCalibrationResult
+    }
+    
+    // Only return if we have actual calibration data
+    if (calibrationData.regressionBeta && calibrationData.regressionBeta.length > 0) {
+      console.log('✅ [WebGazerManager] Extracted calibration data:', {
+        hasBeta: !!calibrationData.regressionBeta,
+        betaLength: calibrationData.regressionBeta?.length || 0,
+        hasCalibrationPoints: !!calibrationData.calibrationPoints,
+        hasResult: !!calibrationData.result
+      })
+      return calibrationData
+    }
+    
+    return null
+  }
+
+  // Restore calibration data to WebGazer from database
+  async restoreCalibrationData(calibrationData: any): Promise<boolean> {
+    if (!this.webgazer || !calibrationData) return false
+    
+    try {
+      const wgAny = this.webgazer as any
+      
+      // Restore regression model coefficients
+      if (calibrationData.regressionBeta && Array.isArray(calibrationData.regressionBeta)) {
+        if (!wgAny.ridge) {
+          wgAny.ridge = {}
+        }
+        if (!wgAny.ridge.regression) {
+          wgAny.ridge.regression = {}
+        }
+        
+        wgAny.ridge.regression.beta = calibrationData.regressionBeta
+        if (calibrationData.regressionWeights) {
+          wgAny.ridge.regression.weights = calibrationData.regressionWeights
+        }
+        if (calibrationData.regressionX) {
+          wgAny.ridge.regression.X = calibrationData.regressionX
+        }
+        if (calibrationData.regressionY) {
+          wgAny.ridge.regression.y = calibrationData.regressionY
+        }
+        
+        console.log('✅ [WebGazerManager] Restored regression coefficients:', {
+          betaLength: calibrationData.regressionBeta.length
+        })
+      }
+      
+      // Restore calibration points if available
+      if (calibrationData.calibrationPoints) {
+        if (!wgAny.ridge) {
+          wgAny.ridge = {}
+        }
+        wgAny.ridge.calibrationPoints = calibrationData.calibrationPoints
+      }
+      
+      // Restore stored data if available
+      if (calibrationData.storedData) {
+        if (!wgAny.ridge) {
+          wgAny.ridge = {}
+        }
+        wgAny.ridge.storedData = calibrationData.storedData
+      }
+      
+      // Restore calibration result
+      if (calibrationData.result) {
+        this.lastCalibrationResult = calibrationData.result
+      }
+      
+      // Save to IndexedDB so WebGazer persists it
+      if (this.webgazer.saveDataAcrossSessions) {
+        this.webgazer.saveDataAcrossSessions(true)
+        // Force a save by triggering WebGazer's save mechanism
+        // WebGazer saves automatically when saveDataAcrossSessions is true
+        console.log('💾 [WebGazerManager] Calibration data restored, will be saved to IndexedDB')
+      }
+      
+      return true
+    } catch (error) {
+      console.error('❌ [WebGazerManager] Error restoring calibration data:', error)
+      return false
+    }
   }
 
   // Clear calibration data from localStorage and reset internal state

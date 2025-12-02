@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useQuery } from 'convex/react'
+import { useQuery, useMutation } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { useAuth } from '../hooks/useAuth'
 import { useParams, useNavigate } from 'react-router-dom'
@@ -14,10 +14,12 @@ import {
   Clock,
   CheckCircle,
   XCircle,
-  AlertCircle
+  AlertCircle,
+  Palette
 } from 'lucide-react'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { EyeTrackingResults } from '../components/EyeTrackingResults'
+import { ValueStudyResults } from '../components/ValueStudyResults'
 
 // Component that loads image dimensions and passes them to EyeTrackingResults
 function EyeTrackingResultsWithDimensions({ data, imageUrl }: { data: any, imageUrl: string }) {
@@ -52,6 +54,7 @@ export function ExperimentDetails() {
   const { experimentId } = useParams()
   const navigate = useNavigate()
   const { user, userId } = useAuth()
+  const updateValueStudyResults = useMutation(api.experiments.updateValueStudyResults)
   
   const experiment = useQuery(
     api.experiments.getExperiment, 
@@ -105,6 +108,8 @@ export function ExperimentDetails() {
 
   const isEyeTracking = experiment.experimentType === 'Eye Tracking'
   const hasEyeTrackingData = experiment.eyeTrackingData && experiment.status === 'completed'
+  const isValueStudy = experiment.experimentType === 'Value Study'
+  const hasValueStudyData = experiment.results && experiment.status === 'completed' && isValueStudy
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -188,16 +193,47 @@ export function ExperimentDetails() {
                   <div>
                     <label className="text-sm font-medium text-gray-500">Results Summary</label>
                     <div className="mt-2 space-y-2">
-                      {Object.entries(experiment.results).map(([key, value]) => (
-                        <div key={key} className="flex justify-between">
-                          <span className="text-sm text-gray-600 capitalize">
-                            {key.replace(/([A-Z])/g, ' $1').trim()}:
-                          </span>
-                          <span className="text-sm font-medium text-gray-900">
-                            {typeof value === 'number' ? value.toLocaleString() : String(value)}
-                          </span>
-                        </div>
-                      ))}
+                      {(() => {
+                        const results = experiment.results as any
+                        const entries: Array<{ key: string; value: any }> = []
+                        
+                        // For Value Study, extract metadata and parameters, skip processedImageDataUrl
+                        if (isValueStudy && results) {
+                          // Add metadata fields
+                          if (results.metadata) {
+                            Object.entries(results.metadata).forEach(([key, value]) => {
+                              entries.push({ key: `metadata.${key}`, value })
+                            })
+                          }
+                          // Add parameter fields (skip levelBoundaries array)
+                          if (results.parameters) {
+                            Object.entries(results.parameters).forEach(([key, value]) => {
+                              if (key !== 'levelBoundaries' && !Array.isArray(value)) {
+                                entries.push({ key: `parameters.${key}`, value })
+                              }
+                            })
+                          }
+                        } else {
+                          // For other experiment types, show all results (filtering out arrays and data URLs)
+                          Object.entries(results).forEach(([key, value]) => {
+                            if (!Array.isArray(value) && 
+                                (typeof value !== 'string' || !value.toString().startsWith('data:image'))) {
+                              entries.push({ key, value })
+                            }
+                          })
+                        }
+                        
+                        return entries.map(({ key, value }) => (
+                          <div key={key} className="flex justify-between">
+                            <span className="text-sm text-gray-600 capitalize">
+                              {key.replace(/\./g, ' ').replace(/([A-Z])/g, ' $1').trim()}:
+                            </span>
+                            <span className="text-sm font-medium text-gray-900">
+                              {typeof value === 'number' ? value.toLocaleString() : String(value)}
+                            </span>
+                          </div>
+                        ))
+                      })()}
                     </div>
                   </div>
                 )}
@@ -257,7 +293,50 @@ export function ExperimentDetails() {
               </div>
             </div>
           </div>
-        ) : !isEyeTracking ? (
+        ) : null}
+
+        {/* Value Study Results */}
+        {isValueStudy && hasValueStudyData && imageUrl ? (
+          <div className="card">
+            <div className="card-header">
+              <h2 className="card-title flex items-center space-x-2">
+                <BarChart3 className="h-5 w-5" />
+                <span>Value Study Analysis</span>
+              </h2>
+              <p className="card-description">
+                Tonal value extraction and analysis with adjustable parameters
+              </p>
+            </div>
+            <div className="card-content">
+              <ValueStudyResults
+                originalImageUrl={imageUrl}
+                initialResults={experiment.results as any}
+                onSave={async (results) => {
+                  if (!experimentId) return
+                  await updateValueStudyResults({
+                    experimentId: experimentId as any,
+                    results: results,
+                    status: 'completed'
+                  })
+                }}
+              />
+            </div>
+          </div>
+        ) : isValueStudy && !hasValueStudyData ? (
+          <div className="card">
+            <div className="card-content">
+              <div className="text-center py-8">
+                <AlertCircle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                  No Value Study Data Available
+                </h3>
+                <p className="text-gray-600">
+                  This experiment doesn't have value study data yet, or the data is still being processed.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : !isEyeTracking && !isValueStudy && experiment.results ? (
           <div className="card">
             <div className="card-content">
               <div className="text-center py-8">
@@ -268,18 +347,57 @@ export function ExperimentDetails() {
                 <p className="text-gray-600">
                   This experiment type doesn't have specialized visualization yet.
                 </p>
-                {experiment.results && (
-                  <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                    <h4 className="font-medium text-gray-900 mb-2">Raw Results:</h4>
-                    <pre className="text-sm text-gray-600 overflow-auto">
-                      {JSON.stringify(experiment.results, null, 2)}
-                    </pre>
-                  </div>
-                )}
+                <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                  <h4 className="font-medium text-gray-900 mb-2">Raw Results:</h4>
+                  <pre className="text-sm text-gray-600 overflow-auto">
+                    {JSON.stringify(experiment.results, null, 2)}
+                  </pre>
+                </div>
               </div>
             </div>
           </div>
         ) : null}
+
+        {/* Run Another Experiment */}
+        {experiment.pictureId && (
+          <div className="card mt-6">
+            <div className="card-header">
+              <h2 className="card-title">Run Another Experiment</h2>
+              <p className="card-description">
+                Analyze this image with a different experiment type
+              </p>
+            </div>
+            <div className="card-content">
+              <div className="flex flex-wrap gap-4">
+                {!isEyeTracking && (
+                  <button
+                    onClick={() => navigate(`/eye-tracking-experiment?pictureId=${experiment.pictureId}`)}
+                    className="btn btn-outline"
+                  >
+                    <Eye className="h-4 w-4 mr-2" />
+                    Run Eye Tracking
+                  </button>
+                )}
+                {!isValueStudy && (
+                  <button
+                    onClick={() => navigate(`/value-study-experiment?pictureId=${experiment.pictureId}`)}
+                    className="btn btn-outline"
+                  >
+                    <Palette className="h-4 w-4 mr-2" />
+                    Run Value Study
+                  </button>
+                )}
+                <button
+                  onClick={() => navigate(`/picture-experiments?pictureId=${experiment.pictureId}`)}
+                  className="btn btn-outline"
+                >
+                  <BarChart3 className="h-4 w-4 mr-2" />
+                  View All Experiments
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Export Options */}
         {experiment.status === 'completed' && (

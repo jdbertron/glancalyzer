@@ -1,6 +1,7 @@
 import { query } from "./_generated/server";
 import { v } from "convex/values";
 import { auth } from "./auth";
+import { getAuthUserId } from "@convex-dev/auth/server";
 
 // Check if user can upload (rate limiting)
 export const canUserUpload = query({
@@ -17,7 +18,7 @@ export const canUserUpload = query({
     // Try to get authenticated user if no userId provided
     let userId = args.userId;
     if (!userId) {
-      const authUserId = await auth.getUserId(ctx);
+      const authUserId = await getAuthUserId(ctx);
       userId = authUserId ?? undefined;
     }
 

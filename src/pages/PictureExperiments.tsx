@@ -11,7 +11,8 @@ import {
   XCircle,
   Image as ImageIcon,
   Download,
-  AlertCircle
+  AlertCircle,
+  Palette
 } from 'lucide-react'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { EyeTrackingResults } from '../components/EyeTrackingResults'
@@ -392,13 +393,22 @@ export function PictureExperiments() {
                 <p className="text-gray-600 mb-4">
                   Analyze this image with different experiment types
                 </p>
-                <button
-                  onClick={() => navigate(`/eye-tracking-experiment?pictureId=${pictureId}`)}
-                  className="btn btn-primary"
-                >
-                  <Eye className="h-4 w-4 mr-2" />
-                  Run Eye Tracking Experiment
-                </button>
+                <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                  <button
+                    onClick={() => navigate(`/eye-tracking-experiment?pictureId=${pictureId}`)}
+                    className="btn btn-primary"
+                  >
+                    <Eye className="h-4 w-4 mr-2" />
+                    Run Eye Tracking
+                  </button>
+                  <button
+                    onClick={() => navigate(`/value-study-experiment?pictureId=${pictureId}`)}
+                    className="btn btn-outline"
+                  >
+                    <Palette className="h-4 w-4 mr-2" />
+                    Run Value Study
+                  </button>
+                </div>
               </div>
             </div>
           </div>

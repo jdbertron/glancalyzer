@@ -125,6 +125,7 @@ export function EyeTrackingExperiment() {
   // Simplified state - just UI state, no WebGazer state
   const [isInitialized, setIsInitialized] = useState(false)
   const [isCalibrated, setIsCalibrated] = useState(false)
+  const [hasTriedDatabaseRestore, setHasTriedDatabaseRestore] = useState(false)
   const [isTracking, setIsTracking] = useState(false)
   const [isCalibrating, setIsCalibrating] = useState(false)
   const [gazeData, setGazeData] = useState<GazePoint[]>([])
@@ -153,6 +154,10 @@ export function EyeTrackingExperiment() {
   const createExperiment = useMutation(api.experiments.createExperiment)
   const updateEyeTrackingResults = useMutation(api.experiments.updateEyeTrackingResults)
   const getImageUrl = useQuery(api.pictures.getImageUrl, picture?.fileId ? { fileId: picture.fileId } : 'skip')
+  const mostRecentCalibration = useQuery(
+    api.experiments.getMostRecentCalibration,
+    userId ? { userId: userId as any } : 'skip'
+  )
 
   // Initialize WebGazer on mount
   useEffect(() => {
@@ -168,14 +173,40 @@ export function EyeTrackingExperiment() {
           
           // Wait for WebGazer to load calibration data from IndexedDB
           // WebGazer restores its regression model from IndexedDB during initialization
-          await new Promise(resolve => setTimeout(resolve, 1500))
+          // Wait longer to ensure IndexedDB operations complete
+          await new Promise(resolve => setTimeout(resolve, 2000))
           
-          // Check once for existing calibration
+          // Check for existing calibration in IndexedDB (with retry since IndexedDB is asynchronous)
           // WebGazer stores calibration in IndexedDB (via localForage) at:
           // IndexedDB/localforage/keyvaluepairs/webgazerGlobalData
           // Our lastCalibrationResult is in-memory only, so we check WebGazer's storage
-          const hasExistingCalibration = await webgazerManager.hasExistingCalibration()
-          const savedCalibration = webgazerManager.getLastCalibrationResult()
+          let hasExistingCalibration = await webgazerManager.hasExistingCalibration()
+          let savedCalibration = webgazerManager.getLastCalibrationResult()
+          
+          // If not found, wait a bit more and retry (IndexedDB writes can be slow)
+          if (!hasExistingCalibration) {
+            console.log('⏳ [React] Calibration not found immediately, waiting and retrying...')
+            await new Promise(resolve => setTimeout(resolve, 1000))
+            hasExistingCalibration = await webgazerManager.hasExistingCalibration()
+            savedCalibration = webgazerManager.getLastCalibrationResult()
+          }
+          
+          // If no calibration in IndexedDB, check database for logged-in users
+          // Only try once to avoid multiple restore attempts
+          if (!hasExistingCalibration && userId && mostRecentCalibration?.calibrationData && !hasTriedDatabaseRestore) {
+            console.log('🔍 [React] No IndexedDB calibration found, checking database...')
+            setHasTriedDatabaseRestore(true)
+            const restored = await webgazerManager.restoreCalibrationData(mostRecentCalibration.calibrationData)
+            if (restored) {
+              console.log('✅ [React] Calibration restored from database')
+              hasExistingCalibration = true
+              savedCalibration = webgazerManager.getLastCalibrationResult()
+              // Wait a bit for WebGazer to process the restored calibration
+              await new Promise(resolve => setTimeout(resolve, 500))
+            } else {
+              console.log('⚠️ [React] Failed to restore calibration from database')
+            }
+          }
           
           // Dismiss loading toast
           toast.dismiss(loadingToast)
@@ -201,7 +232,7 @@ export function EyeTrackingExperiment() {
             }
             
             setIsCalibrated(true)
-            console.log('✅ [React] Existing calibration detected in WebGazer IndexedDB')
+            console.log('✅ [React] Existing calibration detected (IndexedDB or database)')
             // Removed toast - less distracting for eye tracking app
           } else {
             console.log('ℹ️ [React] No existing calibration found - user will need to calibrate')
@@ -214,7 +245,7 @@ export function EyeTrackingExperiment() {
           toast.error('Failed to initialize WebGazer. Please refresh the page.')
         })
     }
-  }, [pictureId, isInitialized])
+  }, [pictureId, isInitialized, userId, mostRecentCalibration, hasTriedDatabaseRestore])
 
   // Add gaze listener
   useEffect(() => {
@@ -428,7 +459,11 @@ export function EyeTrackingExperiment() {
     if (allCompleted) {
       console.log('✅ [React] All calibration points completed, validating...')
       // All points completed, validate calibration
-      setTimeout(() => {
+      setTimeout(async () => {
+        // Force save calibration to IndexedDB before validating
+        // This ensures the calibration is persisted even if user navigates away
+        await webgazerManager.forceSaveCalibration()
+        
         const result = webgazerManager.validateCalibration()
         setCalibrationResult(result)
         
@@ -775,6 +810,9 @@ export function EyeTrackingExperiment() {
         console.warn('Gaze data validation failed:', validation.issues)
       }
       
+      // Extract calibration data from WebGazer before saving
+      const calibrationData = webgazerManager.extractCalibrationData()
+      
       // Process results FIRST (before saving) so user can see results even if save fails
       const processedData: EyeTrackingData = {
         gazePoints: validation.validPoints,
@@ -807,11 +845,14 @@ export function EyeTrackingExperiment() {
           ? experimentResponse 
           : experimentResponse.experimentId
         
-        // Update experiment with eye tracking data
+        // Update experiment with eye tracking data (including calibration data)
         await updateEyeTrackingResults({
           experimentId: experimentId as any,
           status: 'completed',
-          eyeTrackingData: processedData
+          eyeTrackingData: {
+            ...processedData,
+            calibrationData: calibrationData || undefined
+          }
         })
         
         const successMessage = validation.isValid 
@@ -836,6 +877,10 @@ export function EyeTrackingExperiment() {
         // Show results inline since we couldn't save/navigate
         setShowResults(true)
       }
+      
+      // Force save calibration to IndexedDB before stopping webcam
+      // This ensures calibration persists even if user navigates away
+      await webgazerManager.forceSaveCalibration()
       
       // Stop webcam after experiment completion (whether save succeeded or failed)
       await webgazerManager.stopWebcam()
