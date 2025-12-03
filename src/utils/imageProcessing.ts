@@ -1,5 +1,5 @@
 /**
- * Image Processing Utilities for Value Study
+ * Image Processing Utilities for Value Study and Edge Detection
  * 
  * This module provides a modular pipeline for image processing operations.
  * The pipeline is designed to be easily reordered and parameterized for experimentation.
@@ -8,6 +8,7 @@
  * 1. Blur (smoothness) - Gaussian or Median based on useMedianBlur parameter
  * 2. Posterization (value levels)
  * 3. HSV Value Extraction
+ * 4. Edge Detection (Laplacian of Gaussian)
  */
 
 export interface ProcessingParameters {
@@ -28,6 +29,23 @@ export interface ProcessingResult {
     originalFormat: string
   }
   parameters: ProcessingParameters
+}
+
+export interface EdgeDetectionParameters {
+  blurRadius: number // Gaussian blur radius before Laplacian (default: calculated from image size)
+  threshold: number // Edge strength threshold 0-255 (default: 30)
+  invert: boolean // Invert edges (white edges on black background) (default: false)
+}
+
+export interface EdgeDetectionResult {
+  processedImageDataUrl: string // Data URL of edge-detected image
+  metadata: {
+    width: number
+    height: number
+    diagonal: number
+    originalFormat: string
+  }
+  parameters: EdgeDetectionParameters
 }
 
 /**
@@ -186,6 +204,175 @@ function applyPosterization(
   }
   
   ctx.putImageData(imageData, 0, 0)
+}
+
+/**
+ * Apply Laplacian operator for edge detection
+ * Uses a 3x3 Laplacian kernel:
+ * [ 0 -1  0]
+ * [-1  4 -1]
+ * [ 0 -1  0]
+ * 
+ * This is fast because it's a small 3x3 convolution.
+ */
+function applyLaplacian(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement
+): void {
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  const data = imageData.data
+  const width = canvas.width
+  const height = canvas.height
+  const output = new Uint8ClampedArray(data.length)
+  
+  // Laplacian kernel (3x3)
+  const kernel = [
+    0, -1,  0,
+    -1, 4, -1,
+    0, -1,  0
+  ]
+  
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = (y * width + x) * 4
+      let sum = 0
+      
+      // Apply kernel
+      for (let ky = -1; ky <= 1; ky++) {
+        for (let kx = -1; kx <= 1; kx++) {
+          const px = x + kx
+          const py = y + ky
+          const kernelIdx = (ky + 1) * 3 + (kx + 1)
+          
+          if (px >= 0 && px < width && py >= 0 && py < height) {
+            const pIdx = (py * width + px) * 4
+            // Use grayscale value (average of RGB)
+            const gray = (data[pIdx] + data[pIdx + 1] + data[pIdx + 2]) / 3
+            sum += gray * kernel[kernelIdx]
+          }
+        }
+      }
+      
+      // Normalize and clamp
+      const edgeStrength = Math.abs(sum)
+      const value = Math.min(255, Math.max(0, edgeStrength))
+      
+      // Output as grayscale
+      output[idx] = value
+      output[idx + 1] = value
+      output[idx + 2] = value
+      output[idx + 3] = data[idx + 3] // Alpha channel
+    }
+  }
+  
+  const outputImageData = new ImageData(output, width, height)
+  ctx.putImageData(outputImageData, 0, 0)
+}
+
+/**
+ * Apply threshold to edge-detected image
+ */
+function applyThreshold(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  threshold: number,
+  invert: boolean
+): void {
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  const data = imageData.data
+  
+  for (let i = 0; i < data.length; i += 4) {
+    // Use grayscale value (all channels should be the same after Laplacian)
+    const gray = data[i]
+    const value = gray >= threshold ? (invert ? 0 : 255) : (invert ? 255 : 0)
+    
+    data[i] = value
+    data[i + 1] = value
+    data[i + 2] = value
+    // Alpha stays the same
+  }
+  
+  ctx.putImageData(imageData, 0, 0)
+}
+
+/**
+ * Edge Detection using Laplacian of Gaussian (LoG)
+ * 
+ * Pipeline:
+ * 1. Convert to grayscale (HSV value extraction)
+ * 2. Apply Gaussian blur (GPU-accelerated)
+ * 3. Apply Laplacian operator (fast 3x3 convolution)
+ * 4. Apply threshold
+ * 
+ * This is optimized for browser performance:
+ * - Uses GPU-accelerated Canvas filter API for blur
+ * - Small 3x3 Laplacian kernel is fast
+ * - Single-pass thresholding
+ */
+export async function processEdgeDetection(
+  imageUrl: string,
+  parameters: Partial<EdgeDetectionParameters> = {}
+): Promise<EdgeDetectionResult> {
+  const {
+    blurRadius,
+    threshold = 30,
+    invert = false
+  } = parameters
+  
+  // Load image
+  const { image, canvas, ctx } = await loadImageData(imageUrl)
+  const width = image.naturalWidth
+  const height = image.naturalHeight
+  const diagonal = Math.sqrt(width * width + height * height)
+  
+  // Calculate blur radius if not provided (smaller than value study for edge detection)
+  const calculatedBlurRadius = blurRadius ?? Math.max(1, Math.round(calculateBlurRadius(width, height) * 0.5))
+  
+  // Create working canvas for intermediate steps
+  const workingCanvas = document.createElement('canvas')
+  workingCanvas.width = width
+  workingCanvas.height = height
+  const workingCtx = workingCanvas.getContext('2d')!
+  
+  // ============================================
+  // EDGE DETECTION PIPELINE
+  // ============================================
+  
+  // Step 1: Convert to grayscale (reuse value extraction)
+  workingCtx.drawImage(canvas, 0, 0)
+  extractValueChannel(workingCtx, workingCanvas)
+  
+  // Step 2: Apply Gaussian blur (GPU-accelerated)
+  // This smooths the image before edge detection to reduce noise
+  applyGaussianBlur(workingCtx, workingCanvas, calculatedBlurRadius)
+  
+  // Step 3: Apply Laplacian operator (fast 3x3 convolution)
+  applyLaplacian(workingCtx, workingCanvas)
+  
+  // Step 4: Apply threshold to create binary edge map
+  applyThreshold(workingCtx, workingCanvas, threshold, invert)
+  
+  // ============================================
+  // END PIPELINE
+  // ============================================
+  
+  // Convert to data URL
+  const processedImageDataUrl = workingCanvas.toDataURL('image/png')
+  
+  return {
+    processedImageDataUrl,
+    metadata: {
+      width,
+      height,
+      diagonal,
+      originalFormat: 'image/png'
+    },
+    parameters: {
+      blurRadius: calculatedBlurRadius,
+      threshold,
+      invert
+    }
+  }
 }
 
 

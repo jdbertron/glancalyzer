@@ -163,6 +163,14 @@ export function Experiments() {
       setNewExperimentType('')
       return
     }
+    
+    // Special handling for Edge Detection experiments
+    if (newExperimentType === 'Edge Detection') {
+      navigate(`/edge-detection-experiment?pictureId=${selectedPicture}`)
+      setShowCreateExperiment(false)
+      setNewExperimentType('')
+      return
+    }
 
     try {
       await createExperiment({
@@ -265,6 +273,7 @@ export function Experiments() {
 
   const experimentTypes = [
     'Value Study',
+    'Edge Detection',
     'Eye Tracking',
     'Object Detection',
     'Sentiment Analysis',

@@ -54,8 +54,9 @@ export default defineConfig({
             }
           })
           
-          if (minified.error) {
-            console.error('[copy-webgazer] Minification error:', minified.error)
+          if (!minified.code || ('error' in minified && minified.error)) {
+            const error = 'error' in minified ? minified.error : 'Unknown minification error'
+            console.error('[copy-webgazer] Minification error:', error)
             // Fallback to unminified
             copyFileSync(webgazerDist, publicDist)
             console.log(`[copy-webgazer] Copied WebGazer (unminified due to error)`)

@@ -189,6 +189,9 @@ export function MyPictures() {
                   onValueStudy={(pictureId) => {
                     navigate(`/value-study-experiment?pictureId=${pictureId}`)
                   }}
+                  onEdgeDetection={(pictureId) => {
+                    navigate(`/edge-detection-experiment?pictureId=${pictureId}`)
+                  }}
                   onDelete={handleDelete}
                   isDeleting={deletingPictureId === picture._id}
                 />

@@ -725,6 +725,63 @@ export const updateValueStudyResults = mutation({
   },
 });
 
+// Update experiment with Edge Detection results
+export const updateEdgeDetectionResults = mutation({
+  args: {
+    experimentId: v.id("experiments"),
+    results: v.object({
+      processedImageDataUrl: v.string(), // Base64 data URL
+      metadata: v.object({
+        width: v.number(),
+        height: v.number(),
+        diagonal: v.number(),
+        originalFormat: v.string(),
+      }),
+      parameters: v.object({
+        blurRadius: v.number(),
+        threshold: v.number(),
+        invert: v.optional(v.boolean()),
+      }),
+    }),
+    status: v.union(
+      v.literal("completed"),
+      v.literal("failed")
+    ),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    message: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    const experiment = await ctx.db.get(args.experimentId);
+    if (!experiment) {
+      return {
+        success: false,
+        message: "Experiment not found",
+      };
+    }
+
+    // Validate that this is an Edge Detection experiment
+    if (experiment.experimentType !== "Edge Detection") {
+      return {
+        success: false,
+        message: "This experiment is not an Edge Detection experiment",
+      };
+    }
+
+    await ctx.db.patch(args.experimentId, {
+      results: args.results,
+      status: args.status,
+      completedAt: Date.now(),
+    });
+
+    return {
+      success: true,
+      message: "Edge Detection results updated successfully",
+    };
+  },
+});
+
 // Get experiment details
 export const getExperiment = query({
   args: {

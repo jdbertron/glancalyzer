@@ -9,7 +9,8 @@ import {
   FileText,
   Download,
   Trash2,
-  Palette
+  Palette,
+  Map
 } from 'lucide-react'
 
 interface PictureCardProps {
@@ -23,11 +24,12 @@ interface PictureCardProps {
   }
   onAnalyzeFocus: (pictureId: string) => void
   onValueStudy?: (pictureId: string) => void
+  onEdgeDetection?: (pictureId: string) => void
   onDelete?: (pictureId: string) => void
   isDeleting?: boolean
 }
 
-export function PictureCard({ picture, onAnalyzeFocus, onValueStudy, onDelete, isDeleting = false }: PictureCardProps) {
+export function PictureCard({ picture, onAnalyzeFocus, onValueStudy, onEdgeDetection, onDelete, isDeleting = false }: PictureCardProps) {
   const imageUrl = useQuery(api.pictures.getImageUrl, { fileId: picture.fileId })
 
   const formatDate = (timestamp: number) => {
@@ -99,6 +101,16 @@ export function PictureCard({ picture, onAnalyzeFocus, onValueStudy, onDelete, i
               >
                 <Palette className="h-4 w-4" />
                 <span>Value Study</span>
+              </button>
+            )}
+            
+            {onEdgeDetection && (
+              <button
+                onClick={() => onEdgeDetection(picture._id)}
+                className="btn btn-outline btn-sm w-full flex items-center justify-center space-x-2"
+              >
+                <Map className="h-4 w-4" />
+                <span>Edge Detection</span>
               </button>
             )}
             

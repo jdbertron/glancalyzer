@@ -12,7 +12,8 @@ import {
   Image as ImageIcon,
   Download,
   AlertCircle,
-  Palette
+  Palette,
+  Map
 } from 'lucide-react'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { EyeTrackingResults } from '../components/EyeTrackingResults'
@@ -407,6 +408,13 @@ export function PictureExperiments() {
                   >
                     <Palette className="h-4 w-4 mr-2" />
                     Run Value Study
+                  </button>
+                  <button
+                    onClick={() => navigate(`/edge-detection-experiment?pictureId=${pictureId}`)}
+                    className="btn btn-outline"
+                  >
+                    <Map className="h-4 w-4 mr-2" />
+                    Run Edge Detection
                   </button>
                 </div>
               </div>

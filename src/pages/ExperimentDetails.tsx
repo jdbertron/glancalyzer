@@ -20,6 +20,7 @@ import {
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { EyeTrackingResults } from '../components/EyeTrackingResults'
 import { ValueStudyResults } from '../components/ValueStudyResults'
+import { EdgeDetectionResults } from '../components/EdgeDetectionResults'
 
 // Component that loads image dimensions and passes them to EyeTrackingResults
 function EyeTrackingResultsWithDimensions({ data, imageUrl }: { data: any, imageUrl: string }) {
@@ -55,6 +56,7 @@ export function ExperimentDetails() {
   const navigate = useNavigate()
   const { user, userId } = useAuth()
   const updateValueStudyResults = useMutation(api.experiments.updateValueStudyResults)
+  const updateEdgeDetectionResults = useMutation(api.experiments.updateEdgeDetectionResults)
   
   const experiment = useQuery(
     api.experiments.getExperiment, 
@@ -110,6 +112,8 @@ export function ExperimentDetails() {
   const hasEyeTrackingData = experiment.eyeTrackingData && experiment.status === 'completed'
   const isValueStudy = experiment.experimentType === 'Value Study'
   const hasValueStudyData = experiment.results && experiment.status === 'completed' && isValueStudy
+  const isEdgeDetection = experiment.experimentType === 'Edge Detection'
+  const hasEdgeDetectionData = experiment.results && experiment.status === 'completed' && isEdgeDetection
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -197,18 +201,18 @@ export function ExperimentDetails() {
                         const results = experiment.results as any
                         const entries: Array<{ key: string; value: any }> = []
                         
-                        // For Value Study, extract metadata and parameters, skip processedImageDataUrl
-                        if (isValueStudy && results) {
+                        // For Value Study and Edge Detection, extract metadata and parameters, skip processedImageDataUrl
+                        if ((isValueStudy || isEdgeDetection) && results) {
                           // Add metadata fields
                           if (results.metadata) {
                             Object.entries(results.metadata).forEach(([key, value]) => {
                               entries.push({ key: `metadata.${key}`, value })
                             })
                           }
-                          // Add parameter fields (skip levelBoundaries array)
+                          // Add parameter fields (skip arrays)
                           if (results.parameters) {
                             Object.entries(results.parameters).forEach(([key, value]) => {
-                              if (key !== 'levelBoundaries' && !Array.isArray(value)) {
+                              if (!Array.isArray(value)) {
                                 entries.push({ key: `parameters.${key}`, value })
                               }
                             })
@@ -336,7 +340,50 @@ export function ExperimentDetails() {
               </div>
             </div>
           </div>
-        ) : !isEyeTracking && !isValueStudy && experiment.results ? (
+        ) : null}
+
+        {/* Edge Detection Results */}
+        {isEdgeDetection && hasEdgeDetectionData && imageUrl ? (
+          <div className="card">
+            <div className="card-header">
+              <h2 className="card-title flex items-center space-x-2">
+                <Map className="h-5 w-5" />
+                <span>Edge Detection Analysis</span>
+              </h2>
+              <p className="card-description">
+                Laplacian-based edge extraction with adjustable parameters
+              </p>
+            </div>
+            <div className="card-content">
+              <EdgeDetectionResults
+                originalImageUrl={imageUrl}
+                initialResults={experiment.results as any}
+                onSave={async (results) => {
+                  if (!experimentId) return
+                  await updateEdgeDetectionResults({
+                    experimentId: experimentId as any,
+                    results: results,
+                    status: 'completed'
+                  })
+                }}
+              />
+            </div>
+          </div>
+        ) : isEdgeDetection && !hasEdgeDetectionData ? (
+          <div className="card">
+            <div className="card-content">
+              <div className="text-center py-8">
+                <AlertCircle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">
+                  No Edge Detection Data Available
+                </h3>
+                <p className="text-gray-600">
+                  This experiment doesn't have edge detection data yet, or the data is still being processed.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : !isEyeTracking && !isValueStudy && !isEdgeDetection && experiment.results ? (
           <div className="card">
             <div className="card-content">
               <div className="text-center py-8">
@@ -385,6 +432,15 @@ export function ExperimentDetails() {
                   >
                     <Palette className="h-4 w-4 mr-2" />
                     Run Value Study
+                  </button>
+                )}
+                {!isEdgeDetection && (
+                  <button
+                    onClick={() => navigate(`/edge-detection-experiment?pictureId=${experiment.pictureId}`)}
+                    className="btn btn-outline"
+                  >
+                    <Map className="h-4 w-4 mr-2" />
+                    Run Edge Detection
                   </button>
                 )}
                 <button
