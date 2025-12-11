@@ -15,7 +15,6 @@ import type * as experiments from "../experiments.js";
 import type * as http from "../http.js";
 import type * as imageClassification from "../imageClassification.js";
 import type * as mlpForward from "../mlpForward.js";
-import type * as modelManagement from "../modelManagement.js";
 import type * as pictures from "../pictures.js";
 import type * as stripe from "../stripe.js";
 import type * as stripeHelpers from "../stripeHelpers.js";
@@ -43,7 +42,6 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   imageClassification: typeof imageClassification;
   mlpForward: typeof mlpForward;
-  modelManagement: typeof modelManagement;
   pictures: typeof pictures;
   stripe: typeof stripe;
   stripeHelpers: typeof stripeHelpers;
