@@ -1,3 +1,6 @@
+// AdSense Banner Component - Commented out but kept for future use
+// Currently using AdsterraBanner instead
+
 import { useEffect, useRef } from 'react';
 import {
   ADSENSE_ENABLED,
@@ -48,6 +51,9 @@ interface AdBannerProps {
 /**
  * Google AdSense Banner Component
  * 
+ * NOTE: This component is currently disabled (AdSense not approved).
+ * Using AdsterraBanner instead. This code is kept for future use.
+ * 
  * Usage Examples:
  * 
  * // Using pre-configured slot:
@@ -69,6 +75,9 @@ export function AdBanner({
   className = '',
   showLabel = true,
 }: AdBannerProps) {
+  // AdSense is currently disabled - return null
+  // Uncomment below when AdSense is approved
+  /*
   const adRef = useRef<HTMLModElement>(null);
   const isLoaded = useRef(false);
 
@@ -146,6 +155,10 @@ export function AdBanner({
       />
     </div>
   );
+  */
+  
+  // Currently disabled - return null
+  return null;
 }
 
 /**
@@ -158,6 +171,9 @@ interface AdSectionProps {
 }
 
 export function AdSection({ children, className = '' }: AdSectionProps) {
+  // AdSense is currently disabled - return null
+  // Uncomment below when AdSense is approved
+  /*
   if (!ADSENSE_ENABLED && !ADSENSE_TEST_MODE) {
     return null;
   }
@@ -167,6 +183,10 @@ export function AdSection({ children, className = '' }: AdSectionProps) {
       {children}
     </div>
   );
+  */
+  
+  // Currently disabled - return null
+  return null;
 }
 
 

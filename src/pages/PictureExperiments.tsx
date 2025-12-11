@@ -249,6 +249,28 @@ export function PictureExperiments() {
                 )}
               </div>
             </div>
+
+            {/* Composition Classification Results */}
+            {picture.compositionProbabilities ? (
+              <div className="mt-6 pt-6 border-t border-gray-200">
+                <h3 className="font-medium text-gray-900 mb-3 flex items-center space-x-2">
+                  <Palette className="h-5 w-5" />
+                  <span>Composition Classification Results</span>
+                </h3>
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <pre className="text-sm text-gray-700 overflow-auto">
+                    {JSON.stringify(picture.compositionProbabilities, null, 2)}
+                  </pre>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-6 pt-6 border-t border-gray-200">
+                <div className="flex items-center space-x-2 text-sm text-gray-500">
+                  <Clock className="h-4 w-4" />
+                  <span>Composition classification in progress...</span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

@@ -1,7 +1,18 @@
 /**
- * Google AdSense Configuration
+ * Ad Configuration - Adsterra & AdSense
  * 
- * HOW TO SET UP:
+ * ============================================================================
+ * ADSTERRA SETUP (Currently Active):
+ * ============================================================================
+ * 1. Sign up at https://beta.publishers.adsterra.com/websites
+ * 2. Add your website to your Adsterra account
+ * 3. Create ad units in the Adsterra dashboard for each placement
+ * 4. Copy the ad codes (script URLs or div IDs) here
+ * 5. Set ADSTERRA_ENABLED to true when ready
+ * 
+ * ============================================================================
+ * ADSENSE SETUP (Commented out - kept for future use):
+ * ============================================================================
  * 1. Sign up at https://adsense.google.com
  * 2. Get your Publisher ID (ca-pub-XXXXXXXXXXXXXXXX)
  * 3. Create ad units in the AdSense dashboard for each placement
@@ -15,7 +26,69 @@
  */
 
 // ============================================================================
-// MAIN CONFIGURATION - Edit these values
+// ADSTERRA CONFIGURATION - Currently Active
+// ============================================================================
+
+/**
+ * Master switch for Adsterra - set to true when ad codes are configured
+ */
+export const ADSTERRA_ENABLED = true;  // ← Set to `true` after adding ad codes
+
+/**
+ * Adsterra ad unit configurations
+ * Get these from: Adsterra Dashboard → Websites → Your Site → Ad Units → Get Code
+ * 
+ * Adsterra provides different ad formats:
+ * - Banner ads: Use script URL or div ID
+ * - Native ads: Use script URL
+ * - Popunder: Usually added to page head/body
+ * 
+ * For each placement, you'll get either:
+ * 1. A script tag: <script src="https://www.adsterra.com/script/XXXXX.js"></script>
+ * 2. A div with ID: <div id="adsterra-XXXXX"></div>
+ * 
+ * Store the script URL or div ID in the adCode field below.
+ */
+export const ADSTERRA_SLOTS = {
+  // Upload page - bottom of the upload form
+  uploadPageBottom: {
+    // Replace with your Adsterra ad code (script URL or div ID)
+    adCode: '',  // e.g., 'https://www.adsterra.com/script/XXXXX.js' or 'adsterra-XXXXX'
+    format: 'horizontal' as const,
+    enabled: true,
+  },
+  
+  // Upload page - sidebar (if you add a sidebar layout)
+  uploadPageSidebar: {
+    adCode: '',
+    format: 'vertical' as const,
+    enabled: true,
+  },
+  
+  // My Pictures page - between picture cards (in-feed style)
+  picturesPageInFeed: {
+    adCode: '',
+    format: 'rectangle' as const,
+    enabled: true,
+  },
+  
+  // My Pictures page - top banner
+  picturesPageBanner: {
+    adCode: '',
+    format: 'horizontal' as const,
+    enabled: true,
+  },
+  
+  // Tips page - sidebar below categories
+  tipsSidebar: {
+    adCode: '',
+    format: 'vertical' as const,
+    enabled: true,
+  },
+} as const;
+
+// ============================================================================
+// ADSENSE CONFIGURATION - Commented out (kept for future use)
 // ============================================================================
 
 /**
@@ -34,14 +107,14 @@ export const ADSENSE_PUBLISHER_ID = 'ca-pub-1598809432303523';
  * Test mode - shows placeholder boxes instead of real ads
  * Useful for development and testing layouts
  */
-export const ADSENSE_TEST_MODE = true;  // ← Set to `false` for real ads after approval
+export const ADSENSE_TEST_MODE = false;  // ← Set to `false` for real ads after approval
 
 // ============================================================================
 // AD SLOTS CONFIGURATION
 // ============================================================================
 
 /**
- * Ad slot configurations for different placements
+ * AdSense ad slot configurations (commented out - kept for future use)
  * Create these ad units in your AdSense dashboard and paste the slot IDs here
  */
 export const AD_SLOTS = {
@@ -81,6 +154,8 @@ export const AD_SLOTS = {
     enabled: true,
   },
 } as const;
+
+export type AdsterraSlotKey = keyof typeof ADSTERRA_SLOTS;
 
 // ============================================================================
 // PAGE-LEVEL AD SETTINGS

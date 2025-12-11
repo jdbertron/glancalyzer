@@ -1,6 +1,7 @@
-import { mutation, query, internalMutation } from "./_generated/server";
+import { mutation, query, internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
+import { internal } from "./_generated/api";
 
 // Generate upload URL for file storage
 export const generateUploadUrl = mutation({
@@ -108,6 +109,10 @@ export const uploadPicture = mutation({
       expiresAt: expiresAt,
       isExpired: false,
     });
+
+    // Note: Classification is now handled in the browser
+    // CLIP features are extracted client-side and sent to classifyFeatures action
+    // This reduces server load and keeps the proprietary MLP model on the server
 
     return {
       pictureId,
@@ -232,6 +237,17 @@ export const getPicture = query({
   },
 });
 
+// Internal query to get picture details (for use in actions)
+export const getPictureInternal = internalQuery({
+  args: {
+    pictureId: v.id("pictures"),
+  },
+  returns: v.union(v.any(), v.null()),
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.pictureId);
+  },
+});
+
 // Get image URL from storage
 export const getImageUrl = query({
   args: {
@@ -240,6 +256,39 @@ export const getImageUrl = query({
   returns: v.union(v.string(), v.null()),
   handler: async (ctx, args) => {
     return await ctx.storage.getUrl(args.fileId);
+  },
+});
+
+// Internal query to get image URL for classification (used by actions)
+export const getImageUrlForClassification = internalQuery({
+  args: {
+    fileId: v.id("_storage"),
+  },
+  returns: v.union(v.string(), v.null()),
+  handler: async (ctx, args) => {
+    return await ctx.storage.getUrl(args.fileId);
+  },
+});
+
+// Internal mutation to store classification results (used by actions)
+export const storeClassificationResults = internalMutation({
+  args: {
+    pictureId: v.id("pictures"),
+    probabilities: v.any(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const picture = await ctx.db.get(args.pictureId);
+    if (!picture) {
+      throw new Error(`Picture ${args.pictureId} not found`);
+    }
+
+    // Store the probabilities as JSON
+    await ctx.db.patch(args.pictureId, {
+      compositionProbabilities: args.probabilities,
+    });
+
+    return null;
   },
 });
 

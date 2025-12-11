@@ -58,6 +58,8 @@ export default defineSchema({
     // Legacy fields for existing records (will be removed in future)
     expiresAt: v.optional(v.number()),
     isExpired: v.optional(v.boolean()),
+    // Composition classification results
+    compositionProbabilities: v.optional(v.any()), // JSON object with composition class probabilities
   }).index("by_user", ["userId"])
     .index("by_file_hash", ["fileHash"])
     .index("by_ip", ["ipAddress"]),

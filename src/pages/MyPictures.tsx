@@ -11,7 +11,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { PictureCard } from '../components/PictureCard'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import toast from 'react-hot-toast'
-import { AdBanner } from '../components/ads'
+import { AdsterraBanner } from '../components/ads'
 
 export function MyPictures() {
   const { user, userId } = useAuth()
@@ -160,7 +160,7 @@ export function MyPictures() {
 
       {/* Top Banner Ad */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
-        <AdBanner slot="picturesPageBanner" />
+        <AdsterraBanner slot="picturesPageBanner" />
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -198,7 +198,7 @@ export function MyPictures() {
                 {/* Insert an in-feed ad after every 8th picture */}
                 {(index + 1) % 8 === 0 && index < allPictures.length - 1 && (
                   <div className="col-span-1 md:col-span-2 lg:col-span-3 xl:col-span-4">
-                    <AdBanner slot="picturesPageInFeed" />
+                    <AdsterraBanner slot="picturesPageInFeed" />
                   </div>
                 )}
               </Fragment>

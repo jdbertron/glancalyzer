@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect } from 'react'
-import { useMutation, useQuery } from 'convex/react'
+import { useMutation, useQuery, useAction } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { useAuth } from '../hooks/useAuth'
 import { Upload as UploadIcon, X, Image as ImageIcon, Eye, BarChart3, Clock, Sparkles, UserPlus } from 'lucide-react'
 import { useNavigate, Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { AdBanner } from '../components/ads'
+import { extractCLIPFeatures } from '../utils/clipFeatures'
+import { AdsterraBanner } from '../components/ads'
 
 export function Upload() {
   const [dragActive, setDragActive] = useState(false)
@@ -36,6 +37,7 @@ export function Upload() {
 
   const generateUploadUrl = useMutation(api.pictures.generateUploadUrl)
   const uploadPicture = useMutation(api.pictures.uploadPicture)
+  const classifyImageFeatures = useAction(api.imageClassification.classifyImageFeatures)
   
   // Check experiment allotment (this is what really matters - can they run experiments?)
   const experimentAllotment = useQuery(
@@ -169,6 +171,27 @@ export function Upload() {
       setUploadedPictureId(pictureResult.pictureId)
       setShowSuccess(true)
       console.log('Upload completed, setting success state:', { pictureId: pictureResult.pictureId })
+      
+      // Extract CLIP features in the browser and classify
+      try {
+        toast.loading('Extracting image features...', { id: 'classify' })
+        const clipFeatures = await extractCLIPFeatures(uploadedFile)
+        
+        toast.loading('Classifying image...', { id: 'classify' })
+        const classificationResult = await classifyImageFeatures({
+          pictureId: pictureResult.pictureId,
+          clipFeatures: Array.from(clipFeatures), // Convert Float32Array to regular array for Convex
+        })
+        
+        if (classificationResult.success) {
+          toast.success('Image classified successfully!', { id: 'classify' })
+        } else {
+          toast.error(classificationResult.error || 'Classification failed', { id: 'classify' })
+        }
+      } catch (error) {
+        console.error('Classification error:', error)
+        toast.error(`Classification failed: ${error instanceof Error ? error.message : 'Unknown error'}`, { id: 'classify' })
+      }
       
       // Reset file input
       if (fileInputRef.current) {
@@ -468,7 +491,7 @@ export function Upload() {
         
         {/* Advertisement - Bottom of upload section */}
         <div className="mt-8">
-          <AdBanner slot="uploadPageBottom" className="max-w-2xl mx-auto" />
+          <AdsterraBanner slot="uploadPageBottom" className="max-w-2xl mx-auto" />
         </div>
       </div>
 
