@@ -18,6 +18,7 @@ import {
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { EyeTrackingResults } from '../components/EyeTrackingResults'
 import { DEBUG_CONFIG } from '../config/debug'
+import { analyzeComposition, formatCompositionName } from '../utils/compositionAnalysis'
 
 // Component that loads image dimensions and passes them to EyeTrackingResults
 function EyeTrackingResultsWithDimensions({ data, imageUrl }: { data: any, imageUrl: string }) {
@@ -255,13 +256,84 @@ export function PictureExperiments() {
               <div className="mt-6 pt-6 border-t border-gray-200">
                 <h3 className="font-medium text-gray-900 mb-3 flex items-center space-x-2">
                   <Palette className="h-5 w-5" />
-                  <span>Composition Classification Results</span>
+                  <span>Composition Analysis</span>
                 </h3>
-                <div className="bg-gray-50 p-4 rounded-lg">
-                  <pre className="text-sm text-gray-700 overflow-auto">
-                    {JSON.stringify(picture.compositionProbabilities, null, 2)}
-                  </pre>
-                </div>
+                {(() => {
+                  const analysis = analyzeComposition(picture.compositionProbabilities as Record<string, number>);
+                  
+                  // Get formatted names for highlighting
+                  const formattedNames = analysis.highlightedCompositions.map(c => formatCompositionName(c));
+                  
+                  // Escape special regex characters in composition names
+                  const escapedNames = formattedNames.map(name => 
+                    name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+                  );
+                  
+                  // Build regex pattern to match any highlighted composition name
+                  if (escapedNames.length === 0) {
+                    return (
+                      <div className="bg-gray-50 p-4 rounded-lg">
+                        <p className="text-base text-gray-700">{analysis.description}</p>
+                      </div>
+                    );
+                  }
+                  
+                  const highlightPattern = new RegExp(`(${escapedNames.join('|')})`, 'gi');
+                  
+                  // Split description by highlighted words
+                  const parts: Array<{ text: string; highlight: boolean }> = [];
+                  let lastIndex = 0;
+                  let match;
+                  
+                  while ((match = highlightPattern.exec(analysis.description)) !== null) {
+                    // Add text before match
+                    if (match.index > lastIndex) {
+                      parts.push({
+                        text: analysis.description.substring(lastIndex, match.index),
+                        highlight: false,
+                      });
+                    }
+                    // Add highlighted match
+                    parts.push({
+                      text: match[0],
+                      highlight: true,
+                    });
+                    lastIndex = match.index + match[0].length;
+                  }
+                  
+                  // Add remaining text
+                  if (lastIndex < analysis.description.length) {
+                    parts.push({
+                      text: analysis.description.substring(lastIndex),
+                      highlight: false,
+                    });
+                  }
+                  
+                  // If no matches found, just show the description as-is
+                  if (parts.length === 0) {
+                    parts.push({
+                      text: analysis.description,
+                      highlight: false,
+                    });
+                  }
+                  
+                  return (
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                      <p className="text-base text-gray-700">
+                        {parts.map((part, index) => {
+                          if (part.highlight) {
+                            return (
+                              <span key={index} className="font-semibold text-blue-600">
+                                {part.text}
+                              </span>
+                            );
+                          }
+                          return <span key={index}>{part.text}</span>;
+                        })}
+                      </p>
+                    </div>
+                  );
+                })()}
               </div>
             ) : (
               <div className="mt-6 pt-6 border-t border-gray-200">
