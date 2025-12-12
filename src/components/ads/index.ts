@@ -16,6 +16,7 @@ export { AdBanner, AdSection } from './AdBanner';
 // Re-export configuration for convenience
 export { 
   ADSTERRA_ENABLED,
+  ADSTERRA_TEST_MODE,
   ADSTERRA_SLOTS,
   ADSENSE_ENABLED, 
   ADSENSE_TEST_MODE,

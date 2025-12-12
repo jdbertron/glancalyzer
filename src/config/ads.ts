@@ -35,53 +35,123 @@
 export const ADSTERRA_ENABLED = true;  // ← Set to `true` after adding ad codes
 
 /**
+ * Test mode - shows placeholder boxes instead of real ads
+ * Set to true during local development to avoid generating impressions/clicks
+ * Set to false in production to show real ads
+ * 
+ * Note: Adsterra doesn't have a built-in test mode, so we disable ads
+ * in development by default to avoid generating test impressions
+ * 
+ * This automatically detects localhost/development and disables real ads
+ */
+export const ADSTERRA_TEST_MODE = 
+  typeof window !== 'undefined' && (
+    process.env.NODE_ENV === 'development' || 
+    window.location.hostname === 'localhost' ||
+    window.location.hostname === '127.0.0.1' ||
+    window.location.hostname.startsWith('192.168.') ||
+    window.location.hostname.startsWith('10.')
+  );
+
+/**
  * Adsterra ad unit configurations
  * Get these from: Adsterra Dashboard → Websites → Your Site → Ad Units → Get Code
  * 
- * Adsterra provides different ad formats:
- * - Banner ads: Use script URL or div ID
- * - Native ads: Use script URL
- * - Popunder: Usually added to page head/body
+ * ============================================================================
+ * REQUIRED AD UNITS TO CREATE IN ADSTERRA:
+ * ============================================================================
  * 
- * For each placement, you'll get either:
- * 1. A script tag: <script src="https://www.adsterra.com/script/XXXXX.js"></script>
- * 2. A div with ID: <div id="adsterra-XXXXX"></div>
+ * Adsterra Format Types Available:
+ * - Banner: Traditional display ads (recommended for most placements)
+ * - Native Banner: Blends with content (best for in-feed placements)
+ * - Popunder: Opens behind main window (not recommended for inline)
+ * - SmartLink: Redirect URL (not for inline display)
+ * - Social Bar: Floating interactive elements (not for inline display)
  * 
- * Store the script URL or div ID in the adCode field below.
+ * ============================================================================
+ * AD UNIT SPECIFICATIONS:
+ * ============================================================================
+ * 
+ * 1. uploadPageBottom
+ *    → Format Type: Banner
+ *    → Size: 728×90 (Leaderboard) or Responsive
+ *    → Placement: Bottom of upload form
+ * 
+ * 2. uploadPageSidebar
+ *    → Format Type: Banner
+ *    → Size: 160×600 (Wide Skyscraper)
+ *    → Placement: Sidebar (if you add one)
+ * 
+ * 3. picturesPageInFeed
+ *    → Format Type: Native Banner (recommended) or Banner
+ *    → Size: 300×250 (Medium Rectangle)
+ *    → Placement: Between picture cards (blends with content)
+ * 
+ * 4. picturesPageBanner
+ *    → Format Type: Banner
+ *    → Size: 728×90 (Leaderboard) or Responsive
+ *    → Placement: Top of My Pictures page
+ * 
+ * 5. tipsSidebar
+ *    → Format Type: Banner
+ *    → Size: 160×600 (Wide Skyscraper)
+ *    → Placement: Sidebar below categories
+ * 
+ * ============================================================================
+ * GETTING AD CODES:
+ * ============================================================================
+ * After creating each ad unit in Adsterra Dashboard:
+ * 1. Go to: Websites → Your Site → Ad Units
+ * 2. Click "Get Code" for each ad unit
+ * 3. Copy the script URL or div ID
+ * 4. Paste it into the adCode field below
+ * 
+ * You'll get either:
+ * - A script tag: <script src="https://www.adsterra.com/script/XXXXX.js"></script>
+ * - A div with ID: <div id="adsterra-XXXXX"></div>
+ * 
+ * Store just the URL or ID in the adCode field (not the full HTML tag).
  */
 export const ADSTERRA_SLOTS = {
   // Upload page - bottom of the upload form
+  // Adsterra Format: Banner | Size: 728×90 (Leaderboard) or Responsive
   uploadPageBottom: {
-    // Replace with your Adsterra ad code (script URL or div ID)
-    adCode: '',  // e.g., 'https://www.adsterra.com/script/XXXXX.js' or 'adsterra-XXXXX'
+    // Reusing same code as picturesPageBanner (728×90)
+    adCode: 'https://www.highperformanceformat.com/c62fe62595e072eb7d693c385704b105/invoke.js',
     format: 'horizontal' as const,
     enabled: true,
   },
   
   // Upload page - sidebar (if you add a sidebar layout)
+  // Adsterra Format: Banner | Size: 160×600 (Wide Skyscraper)
   uploadPageSidebar: {
-    adCode: '',
+    // Reusing same code as tipsSidebar (160×600)
+    adCode: 'https://www.highperformanceformat.com/e3dd60af77eb8c0958738333f8966aa5/invoke.js',
     format: 'vertical' as const,
     enabled: true,
   },
   
   // My Pictures page - between picture cards (in-feed style)
+  // Adsterra Format: Native Banner (recommended) or Banner | Size: 300×250 (Medium Rectangle)
   picturesPageInFeed: {
-    adCode: '',
+    // Script URL from Adsterra (extract from the <script src="..."> tag)
+    adCode: 'https://www.highperformanceformat.com/d6fbd63c8b82c85ba1546c2f43d17d1d/invoke.js',
     format: 'rectangle' as const,
     enabled: true,
   },
   
   // My Pictures page - top banner
+  // Adsterra Format: Banner | Size: 728×90 (Leaderboard) or Responsive
   picturesPageBanner: {
-    adCode: '',
+    adCode: 'https://www.highperformanceformat.com/c62fe62595e072eb7d693c385704b105/invoke.js',
     format: 'horizontal' as const,
     enabled: true,
   },
   
   // Tips page - sidebar below categories
+  // Adsterra Format: Banner | Size: 160×600 (Wide Skyscraper)
   tipsSidebar: {
-    adCode: '',
+    adCode: 'https://www.highperformanceformat.com/e3dd60af77eb8c0958738333f8966aa5/invoke.js',
     format: 'vertical' as const,
     enabled: true,
   },
