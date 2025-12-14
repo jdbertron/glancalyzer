@@ -11,6 +11,7 @@
 import type * as auth from "../auth.js";
 import type * as authUtils from "../authUtils.js";
 import type * as crons from "../crons.js";
+import type * as emailProvider from "../emailProvider.js";
 import type * as experiments from "../experiments.js";
 import type * as http from "../http.js";
 import type * as imageClassification from "../imageClassification.js";
@@ -38,6 +39,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   authUtils: typeof authUtils;
   crons: typeof crons;
+  emailProvider: typeof emailProvider;
   experiments: typeof experiments;
   http: typeof http;
   imageClassification: typeof imageClassification;

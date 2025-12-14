@@ -1,6 +1,7 @@
 import { convexAuth } from "@convex-dev/auth/server";
 import { Password } from "@convex-dev/auth/providers/Password";
 import { DataModel } from "./_generated/dataModel";
+import { ResendEmailProvider } from "./emailProvider";
 
 // Configure Convex Auth
 // Use Password provider with explicit id="password" to ensure it matches signIn('password', ...)
@@ -14,6 +15,8 @@ export const { auth, signIn, signOut, store } = convexAuth({
           name: params.name as string | undefined,
         };
       },
+      // Configure password reset using OTP via email
+      reset: ResendEmailProvider,
     }),
   ],
 });

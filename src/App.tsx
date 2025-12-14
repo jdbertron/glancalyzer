@@ -7,6 +7,8 @@ import { Home } from './pages/Home'
 import { Login } from './pages/Login'
 import { Register } from './pages/Register'
 import { VerifyEmail } from './pages/VerifyEmail'
+import { ForgotPassword } from './pages/ForgotPassword'
+import { ResetPassword } from './pages/ResetPassword'
 import { Dashboard } from './pages/Dashboard'
 import { Upload } from './pages/Upload'
 import { ExperimentDetails } from './pages/ExperimentDetails'
@@ -51,6 +53,16 @@ function App() {
           <Route path="/verify-email" element={
             <ErrorBoundary>
               <VerifyEmail />
+            </ErrorBoundary>
+          } />
+          <Route path="/forgot-password" element={
+            <ErrorBoundary>
+              <ForgotPassword />
+            </ErrorBoundary>
+          } />
+          <Route path="/reset-password" element={
+            <ErrorBoundary>
+              <ResetPassword />
             </ErrorBoundary>
           } />
           <Route path="/dashboard" element={
