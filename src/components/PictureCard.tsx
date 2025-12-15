@@ -10,7 +10,8 @@ import {
   Download,
   Trash2,
   Palette,
-  Map
+  Map,
+  CheckCircle
 } from 'lucide-react'
 
 interface PictureCardProps {
@@ -31,6 +32,25 @@ interface PictureCardProps {
 
 export function PictureCard({ picture, onAnalyzeFocus, onValueStudy, onEdgeDetection, onDelete, isDeleting = false }: PictureCardProps) {
   const imageUrl = useQuery(api.pictures.getImageUrl, { fileId: picture.fileId })
+  
+  // Query experiments to check which ones exist
+  const experiments = useQuery(
+    api.experiments.getPictureExperiments,
+    { pictureId: picture._id as any }
+  )
+  
+  // Check which experiments exist (completed)
+  const hasEyeTracking = experiments?.some(exp => 
+    exp.experimentType === 'Eye Tracking' && exp.status === 'completed'
+  ) || false
+  
+  const hasValueStudy = experiments?.some(exp => 
+    exp.experimentType === 'Value Study' && exp.status === 'completed'
+  ) || false
+  
+  const hasEdgeDetection = experiments?.some(exp => 
+    exp.experimentType === 'Edge Detection' && exp.status === 'completed'
+  ) || false
 
   const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleDateString('en-US', {
@@ -88,10 +108,13 @@ export function PictureCard({ picture, onAnalyzeFocus, onValueStudy, onEdgeDetec
           <div className="space-y-2">
             <button
               onClick={() => onAnalyzeFocus(picture._id)}
-              className="btn btn-primary btn-sm w-full flex items-center justify-center space-x-2"
+              className="btn btn-outline btn-sm w-full flex items-center justify-center space-x-2"
             >
               <Eye className="h-4 w-4" />
               <span>Analyze Focus Areas</span>
+              {hasEyeTracking && (
+                <CheckCircle className="h-4 w-4 text-green-600" />
+              )}
             </button>
             
             {onValueStudy && (
@@ -101,6 +124,9 @@ export function PictureCard({ picture, onAnalyzeFocus, onValueStudy, onEdgeDetec
               >
                 <Palette className="h-4 w-4" />
                 <span>Value Study</span>
+                {hasValueStudy && (
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                )}
               </button>
             )}
             
@@ -111,6 +137,9 @@ export function PictureCard({ picture, onAnalyzeFocus, onValueStudy, onEdgeDetec
               >
                 <Map className="h-4 w-4" />
                 <span>Edge Detection</span>
+                {hasEdgeDetection && (
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                )}
               </button>
             )}
             

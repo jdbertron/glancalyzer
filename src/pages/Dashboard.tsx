@@ -2,7 +2,7 @@ import { useQuery, useMutation } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { useAuth } from '../hooks/useAuth'
 import { Link } from 'react-router-dom'
-import { Upload, BarChart3, Image, Clock, CheckCircle } from 'lucide-react'
+import { Upload, BarChart3, Image, Clock, CheckCircle, Settings } from 'lucide-react'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { useEffect } from 'react'
 
@@ -344,7 +344,7 @@ export function Dashboard() {
               <p className="card-description">Get started with your next analysis</p>
             </div>
             <div className="card-content">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <Link
                   to="/upload"
                   className="flex items-center space-x-3 p-4 border border-gray-200 rounded-lg hover:border-primary-300 hover:bg-primary-50 transition-colors"
@@ -377,6 +377,17 @@ export function Dashboard() {
                   <div>
                     <p className="font-medium text-gray-900">Profile</p>
                     <p className="text-sm text-gray-500">Manage your account</p>
+                  </div>
+                </Link>
+
+                <Link
+                  to="/calibration-lab"
+                  className="flex items-center space-x-3 p-4 border border-gray-200 rounded-lg hover:border-primary-300 hover:bg-primary-50 transition-colors"
+                >
+                  <Settings className="h-6 w-6 text-primary-600" />
+                  <div>
+                    <p className="font-medium text-gray-900">Calibration Lab</p>
+                    <p className="text-sm text-gray-500">Fine-tune eye tracking</p>
                   </div>
                 </Link>
               </div>

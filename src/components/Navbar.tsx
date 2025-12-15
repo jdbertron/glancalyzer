@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Upload, User, LogOut, Home, Image, Lightbulb, Settings } from 'lucide-react'
+import { Upload, User, LogOut, Home, Image, Lightbulb } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 
 interface NavbarProps {
@@ -35,14 +35,6 @@ export function Navbar({ user: userProp }: NavbarProps) {
             >
               <Lightbulb className="h-4 w-4" />
               <span>Tips</span>
-            </Link>
-            
-            <Link
-              to="/calibration-lab"
-              className="btn btn-outline btn-sm flex items-center space-x-2"
-            >
-              <Settings className="h-4 w-4" />
-              <span>Calibration Lab</span>
             </Link>
             
             <Link

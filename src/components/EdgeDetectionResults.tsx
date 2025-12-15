@@ -115,14 +115,14 @@ export function EdgeDetectionResults({
                 <input
                   type="range"
                   min="1"
-                  max="20"
+                  max="10"
                   value={blurRadius}
                   onChange={(e) => setBlurRadius(parseInt(e.target.value))}
                   className="w-full"
                 />
                 <div className="flex justify-between text-xs text-gray-500 mt-1">
                   <span>1px</span>
-                  <span>20px</span>
+                  <span>10px</span>
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
                   Controls noise reduction before edge detection
@@ -136,15 +136,15 @@ export function EdgeDetectionResults({
                 </label>
                 <input
                   type="range"
-                  min="0"
-                  max="255"
+                  min="1"
+                  max="10"
                   value={threshold}
                   onChange={(e) => setThreshold(parseInt(e.target.value))}
                   className="w-full"
                 />
                 <div className="flex justify-between text-xs text-gray-500 mt-1">
-                  <span>0</span>
-                  <span>255</span>
+                  <span>1</span>
+                  <span>10</span>
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
                   Higher values show only stronger edges
@@ -162,7 +162,7 @@ export function EdgeDetectionResults({
                   className="mr-2"
                 />
                 <span className="text-sm text-gray-700">
-                  Invert (white edges on black background)
+                  Invert (black edges on white background)
                 </span>
               </label>
             </div>

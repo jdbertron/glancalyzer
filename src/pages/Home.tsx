@@ -197,20 +197,22 @@ export function Home() {
         </div>
       </div>
 
-      {/* CTA Section */}
-      <div className="bg-primary-600 py-16">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-3xl font-bold text-white mb-4">
-            Ready to analyze your images?
-          </h2>
-          <p className="text-xl text-primary-100 mb-8">
-            Join hundreds of users already using Don't Blink Art
-          </p>
-          <Link to="/upload" className="btn bg-white text-primary-600 hover:bg-gray-100 btn-lg">
-            Try It Now (No Signup Required)
-          </Link>
+      {/* CTA Section - Only show for non-logged-in users */}
+      {!user && (
+        <div className="bg-primary-600 py-16">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <h2 className="text-3xl font-bold text-white mb-4">
+              Ready to analyze your images?
+            </h2>
+            <p className="text-xl text-primary-100 mb-8">
+              Join hundreds of users already using Don't Blink Art
+            </p>
+            <Link to="/upload" className="btn bg-white text-primary-600 hover:bg-gray-100 btn-lg">
+              Try It Now (No Signup Required)
+            </Link>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

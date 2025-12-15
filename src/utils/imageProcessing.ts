@@ -34,7 +34,7 @@ export interface ProcessingResult {
 export interface EdgeDetectionParameters {
   blurRadius: number // Gaussian blur radius before Laplacian (default: calculated from image size)
   threshold: number // Edge strength threshold 0-255 (default: 30)
-  invert: boolean // Invert edges (white edges on black background) (default: false)
+  invert: boolean // Invert edges (black edges on white background when true) (default: false)
 }
 
 export interface EdgeDetectionResult {

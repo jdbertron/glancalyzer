@@ -12,8 +12,10 @@ const TIER_CONFIG = {
 } as const;
 
 // Configuration for unregistered/anonymous users (tracked by IP)
+// Limit applies per image, not per experiment - once an image is uploaded and used,
+// users can run all experiments on that image without additional limits
 const ANONYMOUS_CONFIG = {
-  maxAllotment: 5,
+  maxAllotment: 5,  // 5 images per month
   refillPerDay: 5 / 30,  // 5 per month ≈ 0.167/day
 };
 
@@ -154,7 +156,7 @@ export const getExperimentAllotmentInfo = query({
         tier: "anonymous",
         isRegistered: false,
         tierLabel: "Guest",
-        refillRate: "5 per month",
+        refillRate: "5 images per month",
       };
     }
 
@@ -167,7 +169,7 @@ export const getExperimentAllotmentInfo = query({
       tier: "anonymous",
       isRegistered: false,
       tierLabel: "Guest",
-      refillRate: "5 per month",
+      refillRate: "5 images per month",
     };
   },
 });
@@ -269,43 +271,67 @@ export const createExperiment = mutation({
     }
 
     // Check limits for anonymous/unregistered users (tracked by IP)
-    // This is a best-effort approach - can be bypassed with VPN/new IP, but provides basic limiting
+    // Limit applies per image, not per experiment - once an image is uploaded and used
+    // (first experiment run), users can run all experiments on that image without additional limits
     let anonymousLimitRecord = null;
     let anonymousRefilledAllotment = ANONYMOUS_CONFIG.maxAllotment;
+    let pictureHasBeenUsed = false;
     
     if (!args.userId && args.ipAddress) {
-      // Look up existing limit record for this IP
-      anonymousLimitRecord = await ctx.db
-        .query("anonymousExperimentLimits")
-        .withIndex("by_ip", (q) => q.eq("ipAddress", args.ipAddress!))
-        .first();
-
-      if (anonymousLimitRecord) {
-        // Calculate refilled allotment based on time since last experiment
-        anonymousRefilledAllotment = calculateRefilledAllotment(
-          anonymousLimitRecord.experimentAllotment,
-          anonymousLimitRecord.lastExperimentAt,
-          ANONYMOUS_CONFIG
-        );
+      // Check if this picture has already been "used" for the limit
+      // A picture is "used" if it was uploaded by this IP and has at least one experiment
+      const picture = await ctx.db.get(args.pictureId);
+      const existingExperimentsForPicture = await ctx.db
+        .query("experiments")
+        .withIndex("by_picture", (q) => q.eq("pictureId", args.pictureId))
+        .collect();
+      
+      // Picture is "used" if:
+      // 1. It was uploaded by this IP (ownership check)
+      // 2. It already has experiments (meaning the first experiment already ran)
+      if (picture && picture.ipAddress === args.ipAddress && existingExperimentsForPicture.length > 0) {
+        // This picture was uploaded by this IP and already has experiments - it's been "used"
+        // This means the first experiment already counted toward the limit, so don't count this one
+        pictureHasBeenUsed = true;
       }
-      // If no record exists, user gets full allotment (handled by default value above)
+      // If picture has no experiments yet, this will be the first one, so it counts toward the limit
 
-      // console.log(`🎯 [${callId}] Anonymous allotment check:`, {
-      //   ipAddress: args.ipAddress,
-      //   hasExistingRecord: !!anonymousLimitRecord,
-      //   refilledAllotment: anonymousRefilledAllotment.toFixed(2),
-      //   maxAllotment: ANONYMOUS_CONFIG.maxAllotment,
-      //   refillPerDay: ANONYMOUS_CONFIG.refillPerDay,
-      // });
+      // Only check limit if this picture hasn't been used yet
+      if (!pictureHasBeenUsed) {
+        // Look up existing limit record for this IP
+        anonymousLimitRecord = await ctx.db
+          .query("anonymousExperimentLimits")
+          .withIndex("by_ip", (q) => q.eq("ipAddress", args.ipAddress!))
+          .first();
 
-      // Check if anonymous user has enough allotment
-      if (anonymousRefilledAllotment < 1) {
-        const daysUntilNextExperiment = (1 - anonymousRefilledAllotment) / ANONYMOUS_CONFIG.refillPerDay;
-        throw new Error(
-          `You've reached the limit for unregistered users (5 experiments per month). ` +
-          `You'll have another experiment available in about ${Math.ceil(daysUntilNextExperiment)} day(s). ` +
-          `Register for free to get 3 experiments per week!`
-        );
+        if (anonymousLimitRecord) {
+          // Calculate refilled allotment based on time since last image was used
+          anonymousRefilledAllotment = calculateRefilledAllotment(
+            anonymousLimitRecord.experimentAllotment,
+            anonymousLimitRecord.lastExperimentAt,
+            ANONYMOUS_CONFIG
+          );
+        }
+        // If no record exists, user gets full allotment (handled by default value above)
+
+        // console.log(`🎯 [${callId}] Anonymous allotment check:`, {
+        //   ipAddress: args.ipAddress,
+        //   hasExistingRecord: !!anonymousLimitRecord,
+        //   refilledAllotment: anonymousRefilledAllotment.toFixed(2),
+        //   maxAllotment: ANONYMOUS_CONFIG.maxAllotment,
+        //   refillPerDay: ANONYMOUS_CONFIG.refillPerDay,
+        //   pictureHasBeenUsed,
+        // });
+
+        // Check if anonymous user has enough allotment for a new image
+        if (anonymousRefilledAllotment < 1) {
+          const daysUntilNextImage = (1 - anonymousRefilledAllotment) / ANONYMOUS_CONFIG.refillPerDay;
+          throw new Error(
+            `You've reached the limit for unregistered users (5 images per month). ` +
+            `You'll be able to analyze another image in about ${Math.ceil(daysUntilNextImage)} day(s). ` +
+            `Register for free to get 3 images per week!`
+          );
+        }
       }
     }
 
@@ -352,13 +378,15 @@ export const createExperiment = mutation({
     }
 
     // Update anonymous user's allotment (tracked by IP)
-    if (!args.userId && args.ipAddress) {
+    // Only decrement if this picture hasn't been used yet (first experiment on this picture)
+    if (!args.userId && args.ipAddress && !pictureHasBeenUsed) {
       const newAllotment = Math.max(0, anonymousRefilledAllotment - 1);
 
       // console.log(`📊 [${callId}] Updating anonymous allotment:`, {
       //   ipAddress: args.ipAddress,
       //   afterRefill: anonymousRefilledAllotment.toFixed(2),
       //   afterDeduction: newAllotment.toFixed(2),
+      //   pictureHasBeenUsed,
       // });
 
       if (anonymousLimitRecord) {
@@ -859,6 +887,64 @@ export const getExperiment = query({
   },
 });
 
+// Get most recent completed experiment of a specific type for a picture
+export const getExistingExperiment = query({
+  args: {
+    pictureId: v.id("pictures"),
+    experimentType: v.string(),
+  },
+  returns: v.union(
+    v.object({
+      _id: v.id("experiments"),
+      _creationTime: v.number(),
+      pictureId: v.id("pictures"),
+      userId: v.optional(v.id("users")),
+      experimentType: v.string(),
+      parameters: v.optional(v.any()),
+      results: v.optional(v.any()),
+      eyeTrackingData: v.optional(v.any()),
+      status: v.union(
+        v.literal("pending"),
+        v.literal("processing"),
+        v.literal("completed"),
+        v.literal("failed")
+      ),
+      createdAt: v.number(),
+      completedAt: v.optional(v.number()),
+    }),
+    v.null()
+  ),
+  handler: async (ctx, args) => {
+    // Find the most recent completed experiment of this type for this picture
+    const experiments = await ctx.db
+      .query("experiments")
+      .withIndex("by_picture", (q) => q.eq("pictureId", args.pictureId))
+      .filter((q) => q.eq(q.field("experimentType"), args.experimentType))
+      .order("desc")
+      .collect();
+
+    // Return the most recent completed experiment, or null if none found
+    const completed = experiments.find(exp => exp.status === "completed");
+    if (completed) {
+      return {
+        _id: completed._id,
+        _creationTime: completed._creationTime,
+        pictureId: completed.pictureId,
+        userId: completed.userId,
+        experimentType: completed.experimentType,
+        parameters: completed.parameters,
+        results: completed.results,
+        eyeTrackingData: completed.eyeTrackingData,
+        status: completed.status,
+        createdAt: completed.createdAt,
+        completedAt: completed.completedAt,
+      };
+    }
+    
+    return null;
+  },
+});
+
 // Get most recent calibration data for a user
 export const getMostRecentCalibration = query({
   args: {
@@ -1171,6 +1257,44 @@ export const clearAllExperiments = mutation({
     return {
       deletedCount,
       message: `Cleared ALL ${deletedCount} experiment(s) from the database`,
+    };
+  },
+});
+
+// Delete a single experiment
+export const deleteExperiment = mutation({
+  args: {
+    experimentId: v.id("experiments"),
+    userId: v.optional(v.id("users")),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    message: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    const experiment = await ctx.db.get(args.experimentId);
+    
+    if (!experiment) {
+      return {
+        success: false,
+        message: "Experiment not found",
+      };
+    }
+
+    // Check ownership (if userId is provided)
+    if (args.userId && experiment.userId !== args.userId) {
+      return {
+        success: false,
+        message: "Not authorized to delete this experiment",
+      };
+    }
+
+    // Delete the experiment
+    await ctx.db.delete(experiment._id);
+
+    return {
+      success: true,
+      message: "Experiment deleted successfully",
     };
   },
 });

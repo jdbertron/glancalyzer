@@ -31,6 +31,12 @@ export function EdgeDetectionExperiment() {
   const createExperiment = useMutation(api.experiments.createExperiment)
   const updateResults = useMutation(api.experiments.updateEdgeDetectionResults)
   
+  // Check for existing experiment
+  const existingExperiment = useQuery(
+    api.experiments.getExistingExperiment,
+    pictureId ? { pictureId: pictureId as any, experimentType: 'Edge Detection' } : 'skip'
+  )
+  
   // Get client IP for anonymous users
   const [clientIP, setClientIP] = useState<string | null>(null)
   const [ipFetching, setIpFetching] = useState(false)
@@ -54,9 +60,21 @@ export function EdgeDetectionExperiment() {
     }
   }, [userId, clientIP, ipFetching])
 
+  // Redirect to existing experiment if found
+  useEffect(() => {
+    if (existingExperiment && existingExperiment.status === 'completed') {
+      navigate(`/experiments/${existingExperiment._id}`)
+    }
+  }, [existingExperiment, navigate])
+
   // Auto-process when image loads (wait for IP if unregistered)
+  // Only run if no existing experiment exists
   useEffect(() => {
     if (!imageUrl || !pictureId || processing || experimentId) return
+    // Don't run if we're still checking for existing experiment
+    if (existingExperiment === undefined) return
+    // Don't run if an existing completed experiment was found
+    if (existingExperiment && existingExperiment.status === 'completed') return
     // For unregistered users, wait for IP to be fetched
     if (!userId && ipFetching) return
     
@@ -73,8 +91,8 @@ export function EdgeDetectionExperiment() {
           experimentType: 'Edge Detection',
           parameters: {
             autoProcessed: true,
-            defaultBlurRadius: undefined, // Will be calculated
-            defaultThreshold: 30,
+            defaultBlurRadius: 3,
+            defaultThreshold: 3,
           }
         })
         
@@ -82,9 +100,9 @@ export function EdgeDetectionExperiment() {
         
         // Process image with default parameters
         const processingResult = await processEdgeDetection(imageUrl, {
-          // blurRadius will be calculated automatically
-          threshold: 30,
-          invert: false
+          blurRadius: 3,
+          threshold: 3,
+          invert: true
         })
         
         // Save results
@@ -114,7 +132,7 @@ export function EdgeDetectionExperiment() {
               results: {
                 processedImageDataUrl: '',
                 metadata: { width: 0, height: 0, diagonal: 0, originalFormat: '' },
-                parameters: { blurRadius: 1, threshold: 30, invert: false }
+                parameters: { blurRadius: 3, threshold: 3, invert: true }
               },
               status: 'failed'
             })
@@ -128,7 +146,7 @@ export function EdgeDetectionExperiment() {
     }
     
     runProcessing()
-  }, [imageUrl, pictureId, processing, experimentId, userId, clientIP, createExperiment, updateResults, navigate, ipFetching])
+  }, [imageUrl, pictureId, processing, experimentId, userId, clientIP, createExperiment, updateResults, navigate, existingExperiment, ipFetching])
 
   if (!pictureId) {
     return (

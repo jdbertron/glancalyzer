@@ -31,6 +31,12 @@ export function ValueStudyExperiment() {
   const createExperiment = useMutation(api.experiments.createExperiment)
   const updateResults = useMutation(api.experiments.updateValueStudyResults)
   
+  // Check for existing experiment
+  const existingExperiment = useQuery(
+    api.experiments.getExistingExperiment,
+    pictureId ? { pictureId: pictureId as any, experimentType: 'Value Study' } : 'skip'
+  )
+  
   // Get client IP for anonymous users
   const [clientIP, setClientIP] = useState<string | null>(null)
   const [ipFetching, setIpFetching] = useState(false)
@@ -54,9 +60,21 @@ export function ValueStudyExperiment() {
     }
   }, [userId, clientIP, ipFetching])
 
+  // Redirect to existing experiment if found
+  useEffect(() => {
+    if (existingExperiment && existingExperiment.status === 'completed') {
+      navigate(`/experiments/${existingExperiment._id}`)
+    }
+  }, [existingExperiment, navigate])
+
   // Auto-process when image loads (wait for IP if unregistered)
+  // Only run if no existing experiment exists
   useEffect(() => {
     if (!imageUrl || !pictureId || processing || experimentId) return
+    // Don't run if we're still checking for existing experiment
+    if (existingExperiment === undefined) return
+    // Don't run if an existing completed experiment was found
+    if (existingExperiment && existingExperiment.status === 'completed') return
     // For unregistered users, wait for IP to be fetched
     if (!userId && ipFetching) return
     
@@ -126,7 +144,7 @@ export function ValueStudyExperiment() {
     }
     
     runProcessing()
-  }, [imageUrl, pictureId, processing, experimentId, userId, clientIP, createExperiment, updateResults, navigate])
+  }, [imageUrl, pictureId, processing, experimentId, userId, clientIP, createExperiment, updateResults, navigate, existingExperiment, ipFetching])
 
   if (!pictureId) {
     return (
