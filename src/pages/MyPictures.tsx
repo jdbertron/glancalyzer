@@ -187,10 +187,10 @@ export function MyPictures() {
                     navigate(`/eye-tracking-experiment?pictureId=${pictureId}`)
                   }}
                   onValueStudy={(pictureId) => {
-                    navigate(`/value-study-experiment?pictureId=${pictureId}`)
+                    navigate(`/picture-experiments?pictureId=${pictureId}`)
                   }}
                   onEdgeDetection={(pictureId) => {
-                    navigate(`/edge-detection-experiment?pictureId=${pictureId}`)
+                    navigate(`/picture-experiments?pictureId=${pictureId}`)
                   }}
                   onDelete={handleDelete}
                   isDeleting={deletingPictureId === picture._id}

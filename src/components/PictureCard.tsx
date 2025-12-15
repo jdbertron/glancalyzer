@@ -1,10 +1,9 @@
 import { useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { Id } from '../../convex/_generated/dataModel'
-import { Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { 
   Eye, 
-  BarChart3, 
   Calendar,
   FileText,
   Download,
@@ -31,6 +30,7 @@ interface PictureCardProps {
 }
 
 export function PictureCard({ picture, onAnalyzeFocus, onValueStudy, onEdgeDetection, onDelete, isDeleting = false }: PictureCardProps) {
+  const navigate = useNavigate()
   const imageUrl = useQuery(api.pictures.getImageUrl, { fileId: picture.fileId })
   
   // Query experiments to check which ones exist
@@ -73,12 +73,13 @@ export function PictureCard({ picture, onAnalyzeFocus, onValueStudy, onEdgeDetec
   return (
     <div className="card hover:shadow-lg transition-shadow">
       <div className="card-content p-0">
-        {/* Image Thumbnail */}
+        {/* Image Thumbnail - Clickable */}
         <div className="relative">
           <img
             src={imageUrl || ''}
             alt={picture.fileName}
-            className="w-full h-48 object-cover rounded-t-lg"
+            className="w-full h-48 object-cover rounded-t-lg cursor-pointer hover:opacity-90 transition-opacity"
+            onClick={() => navigate(`/picture-experiments?pictureId=${picture._id}`)}
           />
           <div className="absolute top-2 right-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
             {picture.experimentCount} experiment{picture.experimentCount !== 1 ? 's' : ''}
@@ -119,7 +120,7 @@ export function PictureCard({ picture, onAnalyzeFocus, onValueStudy, onEdgeDetec
             
             {onValueStudy && (
               <button
-                onClick={() => onValueStudy(picture._id)}
+                onClick={() => navigate(`/picture-experiments?pictureId=${picture._id}`)}
                 className="btn btn-outline btn-sm w-full flex items-center justify-center space-x-2"
               >
                 <Palette className="h-4 w-4" />
@@ -132,7 +133,7 @@ export function PictureCard({ picture, onAnalyzeFocus, onValueStudy, onEdgeDetec
             
             {onEdgeDetection && (
               <button
-                onClick={() => onEdgeDetection(picture._id)}
+                onClick={() => navigate(`/picture-experiments?pictureId=${picture._id}`)}
                 className="btn btn-outline btn-sm w-full flex items-center justify-center space-x-2"
               >
                 <Map className="h-4 w-4" />
@@ -142,14 +143,6 @@ export function PictureCard({ picture, onAnalyzeFocus, onValueStudy, onEdgeDetec
                 )}
               </button>
             )}
-            
-            <Link
-              to="/dashboard"
-              className="btn btn-outline btn-sm w-full flex items-center justify-center space-x-1"
-            >
-              <BarChart3 className="h-4 w-4" />
-              <span>View Experiments</span>
-            </Link>
             
             <div className="grid grid-cols-2 gap-2">
               <button

@@ -60,12 +60,15 @@ export function ValueStudyExperiment() {
     }
   }, [userId, clientIP, ipFetching])
 
-  // Redirect to existing experiment if found
+  // Redirect back to picture experiments page if experiment already exists
+  // This prevents the redirect loop and allows users to adjust settings in the panel
   useEffect(() => {
-    if (existingExperiment && existingExperiment.status === 'completed') {
-      navigate(`/experiments/${existingExperiment._id}`)
+    if (existingExperiment && existingExperiment.status === 'completed' && pictureId) {
+      // Instead of redirecting to experiment details, go back to picture experiments
+      // where they can adjust settings in the collapsible panel
+      navigate(`/picture-experiments?pictureId=${pictureId}`)
     }
-  }, [existingExperiment, navigate])
+  }, [existingExperiment, navigate, pictureId])
 
   // Auto-process when image loads (wait for IP if unregistered)
   // Only run if no existing experiment exists
@@ -112,9 +115,13 @@ export function ValueStudyExperiment() {
         
         toast.success('Value Study completed!')
         
-        // Navigate to results after a short delay
+        // Navigate back to picture experiments page after a short delay
         setTimeout(() => {
-          navigate(`/experiments/${result.experimentId}`)
+          if (pictureId) {
+            navigate(`/picture-experiments?pictureId=${pictureId}`)
+          } else {
+            navigate(`/experiments/${result.experimentId}`)
+          }
         }, 1000)
         
       } catch (error: any) {
@@ -204,7 +211,13 @@ export function ValueStudyExperiment() {
         {/* Header */}
         <div className="mb-6">
           <button
-            onClick={() => navigate(-1)}
+            onClick={() => {
+              if (pictureId) {
+                navigate(`/picture-experiments?pictureId=${pictureId}`)
+              } else {
+                navigate(-1)
+              }
+            }}
             className="flex items-center text-gray-600 hover:text-gray-900 mb-4"
           >
             <ArrowLeft className="h-5 w-5 mr-2" />

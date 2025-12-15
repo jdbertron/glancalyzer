@@ -156,17 +156,17 @@ export function Experiments() {
       return
     }
 
-    // Special handling for Value Study experiments
+    // Special handling for Value Study experiments - navigate to picture experiments page
     if (newExperimentType === 'Value Study') {
-      navigate(`/value-study-experiment?pictureId=${selectedPicture}`)
+      navigate(`/picture-experiments?pictureId=${selectedPicture}`)
       setShowCreateExperiment(false)
       setNewExperimentType('')
       return
     }
     
-    // Special handling for Edge Detection experiments
+    // Special handling for Edge Detection experiments - navigate to picture experiments page
     if (newExperimentType === 'Edge Detection') {
-      navigate(`/edge-detection-experiment?pictureId=${selectedPicture}`)
+      navigate(`/picture-experiments?pictureId=${selectedPicture}`)
       setShowCreateExperiment(false)
       setNewExperimentType('')
       return

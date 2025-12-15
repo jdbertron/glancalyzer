@@ -88,6 +88,12 @@ export function EdgeDetectionResults({
     setCurrentResults(initialResults)
   }
 
+  // Check if settings have changed from initial values
+  const hasChanges = 
+    blurRadius !== initialResults.parameters.blurRadius ||
+    threshold !== initialResults.parameters.threshold ||
+    invert !== (initialResults.parameters.invert || false)
+
   return (
     <div className="space-y-6">
       {/* Controls Toggle */}
@@ -180,11 +186,11 @@ export function EdgeDetectionResults({
               {onSave && (
                 <button
                   onClick={handleSave}
-                  disabled={processing}
-                  className="btn btn-outline flex items-center"
+                  disabled={processing || !hasChanges}
+                  className="btn btn-primary flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <Save className="h-4 w-4 mr-2" />
-                  Save
+                  Save Settings
                 </button>
               )}
               

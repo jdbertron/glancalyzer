@@ -5,57 +5,68 @@ import { useSearchParams, useNavigate } from 'react-router-dom'
 import { 
   ArrowLeft, 
   Eye, 
-  BarChart3, 
   CheckCircle, 
   Clock, 
   XCircle,
   Image as ImageIcon,
-  Download,
-  AlertCircle,
   Palette,
   Map,
   Trash2,
-  ExternalLink
+  ExternalLink,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react'
 import { LoadingSpinner } from '../components/LoadingSpinner'
-import { EyeTrackingResults } from '../components/EyeTrackingResults'
+import { ValueStudyResults } from '../components/ValueStudyResults'
+import { EdgeDetectionResults } from '../components/EdgeDetectionResults'
 import { DEBUG_CONFIG } from '../config/debug'
 import { analyzeComposition, formatCompositionName } from '../utils/compositionAnalysis'
-
-// Component that loads image dimensions and passes them to EyeTrackingResults
-function EyeTrackingResultsWithDimensions({ data, imageUrl }: { data: any, imageUrl: string }) {
-  const [imageDimensions, setImageDimensions] = useState<{ width: number, height: number } | null>(null)
-  const imageRef = useRef<HTMLImageElement>(null)
-
-  useEffect(() => {
-    const img = new Image()
-    img.onload = () => {
-      setImageDimensions({
-        width: img.naturalWidth,
-        height: img.naturalHeight
-      })
-    }
-    img.src = imageUrl
-  }, [imageUrl])
-
-  if (!imageDimensions) {
-    return <LoadingSpinner />
-  }
-
-  return (
-    <EyeTrackingResults
-      data={data}
-      imageUrl={imageUrl}
-      imageWidth={imageDimensions.width}
-      imageHeight={imageDimensions.height}
-    />
-  )
-}
+import { processValueStudy, processEdgeDetection } from '../utils/imageProcessing'
+import { useAuth } from '../hooks/useAuth'
+import toast from 'react-hot-toast'
 
 export function PictureExperiments() {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
+  const { userId } = useAuth()
   const pictureId = searchParams.get('pictureId')
+  
+  // Collapsible panel states
+  const [expandedPanels, setExpandedPanels] = useState<{
+    eyeTracking: boolean
+    valueStudy: boolean
+    edgeDetection: boolean
+  }>({
+    eyeTracking: false,
+    valueStudy: false,
+    edgeDetection: false
+  })
+  
+  // Processing states
+  const [processingValueStudy, setProcessingValueStudy] = useState(false)
+  const [processingEdgeDetection, setProcessingEdgeDetection] = useState(false)
+  
+  // Client IP for anonymous users
+  const [clientIP, setClientIP] = useState<string | null>(null)
+  const [ipFetching, setIpFetching] = useState(false)
+  useEffect(() => {
+    if (!userId && !clientIP && !ipFetching) {
+      setIpFetching(true)
+      fetch('https://api.ipify.org?format=json')
+        .then(res => res.json())
+        .then(data => {
+          setClientIP(data.ip || 'unknown')
+          setIpFetching(false)
+        })
+        .catch(() => {
+          setClientIP('unknown')
+          setIpFetching(false)
+        })
+    } else if (userId) {
+      setClientIP(null)
+      setIpFetching(false)
+    }
+  }, [userId, clientIP, ipFetching])
   
   // Add error handling for queries
   const picture = useQuery(
@@ -77,49 +88,52 @@ export function PictureExperiments() {
   // Cleanup mutation
   const cleanupDuplicates = useMutation(api.experiments.cleanupDuplicateExperiments)
   const deleteExperiment = useMutation(api.experiments.deleteExperiment)
+  const createExperiment = useMutation(api.experiments.createExperiment)
+  const updateValueStudyResults = useMutation(api.experiments.updateValueStudyResults)
+  const updateEdgeDetectionResults = useMutation(api.experiments.updateEdgeDetectionResults)
   
   const imageUrl = useQuery(
     api.pictures.getImageUrl,
     picture?.fileId ? { fileId: picture.fileId } : 'skip'
   )
 
-  // Filter experiments: keep only latest value study and edge detection, all eye tracking
-  const filteredExperiments = experiments ? (() => {
-    const completed = experiments.filter(exp => exp.status === 'completed')
-    
-    // Get latest value study (most recent by createdAt)
-    const valueStudies = completed.filter(exp => exp.experimentType === 'Value Study')
-    const latestValueStudy = valueStudies.length > 0 
-      ? valueStudies.reduce((latest, current) => 
-          current.createdAt > latest.createdAt ? current : latest
-        )
-      : null
-    
-    // Get latest edge detection (most recent by createdAt)
-    const edgeDetections = completed.filter(exp => exp.experimentType === 'Edge Detection')
-    const latestEdgeDetection = edgeDetections.length > 0
-      ? edgeDetections.reduce((latest, current) => 
-          current.createdAt > latest.createdAt ? current : latest
-        )
-      : null
-    
-    // Get all eye tracking experiments
-    const eyeTrackingExps = completed.filter(exp => exp.experimentType === 'Eye Tracking')
-    
-    // Combine: latest value study, latest edge detection, all eye tracking
-    const filtered: typeof completed = []
-    if (latestValueStudy) filtered.push(latestValueStudy)
-    if (latestEdgeDetection) filtered.push(latestEdgeDetection)
-    filtered.push(...eyeTrackingExps)
-    
-    return filtered
-  })() : []
+  // Get latest experiments
+  const valueStudyExps = experiments?.filter(exp => 
+    exp.experimentType === 'Value Study' && exp.status === 'completed'
+  ) || []
+  const latestValueStudy = valueStudyExps.length > 0
+    ? valueStudyExps.reduce((latest, current) => 
+        current.createdAt > latest.createdAt ? current : latest
+      )
+    : null
+
+  const edgeDetectionExps = experiments?.filter(exp => 
+    exp.experimentType === 'Edge Detection' && exp.status === 'completed'
+  ) || []
+  const latestEdgeDetection = edgeDetectionExps.length > 0
+    ? edgeDetectionExps.reduce((latest, current) => 
+        current.createdAt > latest.createdAt ? current : latest
+      )
+    : null
+
+  const eyeTrackingExps = experiments?.filter(exp => 
+    exp.experimentType === 'Eye Tracking' && exp.status === 'completed'
+  ) || []
+
+  // Auto-expand panels that have results
+  useEffect(() => {
+    if (latestValueStudy && !expandedPanels.valueStudy) {
+      setExpandedPanels(prev => ({ ...prev, valueStudy: true }))
+    }
+    if (latestEdgeDetection && !expandedPanels.edgeDetection) {
+      setExpandedPanels(prev => ({ ...prev, edgeDetection: true }))
+    }
+  }, [latestValueStudy, latestEdgeDetection])
 
   // Add error boundary for component crashes
   if (experiments === undefined || picture === undefined) {
     return <LoadingSpinner />
   }
-
 
   if (!pictureId) {
     return (
@@ -133,10 +147,10 @@ export function PictureExperiments() {
             No picture ID provided.
           </p>
           <button
-            onClick={() => navigate('/upload')}
+            onClick={() => navigate('/my-pictures')}
             className="btn btn-primary"
           >
-            Upload Image
+            Back to My Pictures
           </button>
         </div>
       </div>
@@ -163,14 +177,18 @@ export function PictureExperiments() {
             This picture doesn't exist or has been removed.
           </p>
           <button
-            onClick={() => navigate('/upload')}
+            onClick={() => navigate('/my-pictures')}
             className="btn btn-primary"
           >
-            Upload New Image
+            Back to My Pictures
           </button>
         </div>
       </div>
     )
+  }
+
+  const togglePanel = (panel: 'eyeTracking' | 'valueStudy' | 'edgeDetection') => {
+    setExpandedPanels(prev => ({ ...prev, [panel]: !prev[panel] }))
   }
 
   return (
@@ -181,17 +199,17 @@ export function PictureExperiments() {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
               <button
-                onClick={() => navigate('/upload')}
+                onClick={() => navigate('/my-pictures')}
                 className="text-gray-400 hover:text-gray-600"
               >
                 <ArrowLeft className="h-6 w-6" />
               </button>
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">
-                  Experiments for {picture.fileName}
+                  {picture.fileName}
                 </h1>
                 <p className="text-gray-600">
-                  {experiments.length} experiment{experiments.length !== 1 ? 's' : ''} completed
+                  Reference analysis and experiments
                 </p>
               </div>
             </div>
@@ -238,7 +256,6 @@ export function PictureExperiments() {
                       try {
                         const result = await cleanupDuplicates({ pictureId: pictureId as any })
                         alert(`✅ ${result.message}`)
-                        // Refresh the page to see updated results
                         window.location.reload()
                       } catch (error) {
                         console.error('Cleanup failed:', error)
@@ -255,7 +272,7 @@ export function PictureExperiments() {
           </div>
         )}
 
-        {/* Picture Info */}
+        {/* Picture Info and Composition */}
         <div className="card mb-6">
           <div className="card-header">
             <h2 className="card-title flex items-center space-x-2">
@@ -296,15 +313,11 @@ export function PictureExperiments() {
                 {(() => {
                   const analysis = analyzeComposition(picture.compositionProbabilities as Record<string, number>);
                   
-                  // Get formatted names for highlighting
                   const formattedNames = analysis.highlightedCompositions.map(c => formatCompositionName(c));
-                  
-                  // Escape special regex characters in composition names
                   const escapedNames = formattedNames.map(name => 
                     name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
                   );
                   
-                  // Build regex pattern to match any highlighted composition name
                   if (escapedNames.length === 0) {
                     return (
                       <div className="bg-gray-50 p-4 rounded-lg">
@@ -323,21 +336,17 @@ export function PictureExperiments() {
                   }
                   
                   const highlightPattern = new RegExp(`(${escapedNames.join('|')})`, 'gi');
-                  
-                  // Split description by highlighted words
                   const parts: Array<{ text: string; highlight: boolean }> = [];
                   let lastIndex = 0;
                   let match;
                   
                   while ((match = highlightPattern.exec(analysis.description)) !== null) {
-                    // Add text before match
                     if (match.index > lastIndex) {
                       parts.push({
                         text: analysis.description.substring(lastIndex, match.index),
                         highlight: false,
                       });
                     }
-                    // Add highlighted match
                     parts.push({
                       text: match[0],
                       highlight: true,
@@ -345,7 +354,6 @@ export function PictureExperiments() {
                     lastIndex = match.index + match[0].length;
                   }
                   
-                  // Add remaining text
                   if (lastIndex < analysis.description.length) {
                     parts.push({
                       text: analysis.description.substring(lastIndex),
@@ -353,7 +361,6 @@ export function PictureExperiments() {
                     });
                   }
                   
-                  // If no matches found, just show the description as-is
                   if (parts.length === 0) {
                     parts.push({
                       text: analysis.description,
@@ -399,337 +406,400 @@ export function PictureExperiments() {
           </div>
         </div>
 
-        {/* Experiments Status Cards */}
-        <div className="card mb-6">
-          <div className="card-header">
-            <h2 className="card-title flex items-center space-x-2">
-              <BarChart3 className="h-5 w-5" />
-              <span>Experiments</span>
-            </h2>
-            <p className="card-description">
-              View results or run new experiments on this image
-            </p>
-          </div>
-          <div className="card-content">
-            <div className="grid md:grid-cols-3 gap-4">
-              {/* Eye Tracking Experiment */}
-              {(() => {
-                const eyeTrackingExps = experiments?.filter(exp => exp.experimentType === 'Eye Tracking' && exp.status === 'completed') || []
-                const eyeTrackingExp = eyeTrackingExps.length > 0 ? eyeTrackingExps[eyeTrackingExps.length - 1] : null // Show latest for card
-                return (
-                  <div className={`border rounded-lg p-4 ${eyeTrackingExp ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center space-x-2">
-                        <Eye className={`h-5 w-5 ${eyeTrackingExp ? 'text-green-600' : 'text-gray-400'}`} />
-                        <h3 className="font-medium text-gray-900">Eye Tracking</h3>
-                      </div>
-                      {eyeTrackingExp ? (
-                        <CheckCircle className="h-5 w-5 text-green-500" />
-                      ) : (
-                        <Clock className="h-5 w-5 text-gray-400" />
-                      )}
-                    </div>
-                    {eyeTrackingExp ? (
-                      <div className="space-y-2">
-                        <p className="text-sm text-gray-600">
-                          Completed {new Date(eyeTrackingExp.createdAt).toLocaleDateString()}
-                        </p>
-                        <button
-                          onClick={() => navigate(`/experiments/${eyeTrackingExp._id}`)}
-                          className="btn btn-sm btn-primary w-full"
-                        >
-                          View Results
-                        </button>
-                        <button
-                          onClick={() => navigate(`/eye-tracking-experiment?pictureId=${pictureId}`)}
-                          className="btn btn-sm btn-outline w-full"
-                        >
-                          Run Again
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <p className="text-sm text-gray-600">
-                          Not yet run
-                        </p>
-                        <button
-                          onClick={() => navigate(`/eye-tracking-experiment?pictureId=${pictureId}`)}
-                          className="btn btn-sm btn-primary w-full"
-                        >
-                          Run Experiment
-                        </button>
-                      </div>
-                    )}
+        {/* Collapsible Experiment Panels */}
+        <div className="space-y-4">
+          {/* Eye Tracking Panel */}
+          <div className="card">
+            <div 
+              className="card-header cursor-pointer hover:bg-gray-50 transition-colors"
+              onClick={() => togglePanel('eyeTracking')}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <Eye className={`h-5 w-5 ${eyeTrackingExps.length > 0 ? 'text-green-600' : 'text-gray-400'}`} />
+                  <div>
+                    <h2 className="card-title">Eye Tracking</h2>
+                    <p className="card-description">
+                      {eyeTrackingExps.length > 0 
+                        ? `${eyeTrackingExps.length} experiment${eyeTrackingExps.length !== 1 ? 's' : ''} completed`
+                        : 'Not yet run'}
+                    </p>
                   </div>
-                )
-              })()}
-
-              {/* Value Study Experiment */}
-              {(() => {
-                const valueStudyExps = experiments?.filter(exp => exp.experimentType === 'Value Study' && exp.status === 'completed') || []
-                const valueStudyExp = valueStudyExps.length > 0 
-                  ? valueStudyExps.reduce((latest, current) => 
-                      current.createdAt > latest.createdAt ? current : latest
-                    )
-                  : null
-                return (
-                  <div className={`border rounded-lg p-4 ${valueStudyExp ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center space-x-2">
-                        <Palette className={`h-5 w-5 ${valueStudyExp ? 'text-green-600' : 'text-gray-400'}`} />
-                        <h3 className="font-medium text-gray-900">Value Study</h3>
-                      </div>
-                      {valueStudyExp ? (
-                        <CheckCircle className="h-5 w-5 text-green-500" />
-                      ) : (
-                        <Clock className="h-5 w-5 text-gray-400" />
-                      )}
-                    </div>
-                    {valueStudyExp ? (
-                      <div className="space-y-2">
-                        <p className="text-sm text-gray-600">
-                          Completed {new Date(valueStudyExp.createdAt).toLocaleDateString()}
-                        </p>
-                        <button
-                          onClick={() => navigate(`/experiments/${valueStudyExp._id}`)}
-                          className="btn btn-sm btn-primary w-full"
-                        >
-                          View Results
-                        </button>
-                        <button
-                          onClick={() => navigate(`/value-study-experiment?pictureId=${pictureId}`)}
-                          className="btn btn-sm btn-outline w-full"
-                        >
-                          Run Again
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <p className="text-sm text-gray-600">
-                          Not yet run
-                        </p>
-                        <button
-                          onClick={() => navigate(`/value-study-experiment?pictureId=${pictureId}`)}
-                          className="btn btn-sm btn-primary w-full"
-                        >
-                          Run Experiment
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )
-              })()}
-
-              {/* Edge Detection Experiment */}
-              {(() => {
-                const edgeDetectionExps = experiments?.filter(exp => exp.experimentType === 'Edge Detection' && exp.status === 'completed') || []
-                const edgeDetectionExp = edgeDetectionExps.length > 0
-                  ? edgeDetectionExps.reduce((latest, current) => 
-                      current.createdAt > latest.createdAt ? current : latest
-                    )
-                  : null
-                return (
-                  <div className={`border rounded-lg p-4 ${edgeDetectionExp ? 'bg-green-50 border-green-200' : 'bg-gray-50 border-gray-200'}`}>
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center space-x-2">
-                        <Map className={`h-5 w-5 ${edgeDetectionExp ? 'text-green-600' : 'text-gray-400'}`} />
-                        <h3 className="font-medium text-gray-900">Edge Detection</h3>
-                      </div>
-                      {edgeDetectionExp ? (
-                        <CheckCircle className="h-5 w-5 text-green-500" />
-                      ) : (
-                        <Clock className="h-5 w-5 text-gray-400" />
-                      )}
-                    </div>
-                    {edgeDetectionExp ? (
-                      <div className="space-y-2">
-                        <p className="text-sm text-gray-600">
-                          Completed {new Date(edgeDetectionExp.createdAt).toLocaleDateString()}
-                        </p>
-                        <button
-                          onClick={() => navigate(`/experiments/${edgeDetectionExp._id}`)}
-                          className="btn btn-sm btn-primary w-full"
-                        >
-                          View Results
-                        </button>
-                        <button
-                          onClick={() => navigate(`/edge-detection-experiment?pictureId=${pictureId}`)}
-                          className="btn btn-sm btn-outline w-full"
-                        >
-                          Run Again
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <p className="text-sm text-gray-600">
-                          Not yet run
-                        </p>
-                        <button
-                          onClick={() => navigate(`/edge-detection-experiment?pictureId=${pictureId}`)}
-                          className="btn btn-sm btn-primary w-full"
-                        >
-                          Run Experiment
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )
-              })()}
-            </div>
-          </div>
-        </div>
-
-        {/* Completed Experiments Details */}
-        {filteredExperiments.length > 0 && (
-          <div className="space-y-6">
-            <h2 className="text-xl font-bold text-gray-900">Experiment Results</h2>
-            {filteredExperiments
-              .map((experiment) => (
-                <div key={experiment._id} className="card">
-                  <div className="card-header">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <CheckCircle className="h-6 w-6 text-green-500" />
-                        <div>
-                          <h2 className="card-title">{experiment.experimentType}</h2>
-                          <p className="card-description">
-                            Completed • {new Date(experiment.createdAt).toLocaleString()}
-                          </p>
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => navigate(`/experiments/${experiment._id}`)}
-                          className="btn btn-primary btn-sm"
-                        >
-                          View Details
-                        </button>
-                        {(() => {
-                          // For experiments with processed images, export the image
-                          const hasProcessedImage = (experiment.experimentType === 'Value Study' || experiment.experimentType === 'Edge Detection') 
-                            && experiment.results 
-                            && (experiment.results as any)?.processedImageDataUrl
-                          
-                          if (!hasProcessedImage) {
-                            // No export for experiments without processed images (e.g., Eye Tracking)
-                            return null
-                          }
-                          
-                          const processedImageUrl = (experiment.results as any).processedImageDataUrl
-                          const experimentTypeName = experiment.experimentType.toLowerCase().replace(/\s+/g, '-')
-                          
-                          return (
-                            <button
-                              onClick={() => {
-                                // Download the processed image
-                                const link = document.createElement('a')
-                                link.href = processedImageUrl
-                                link.download = `${experimentTypeName}-${experiment._id}.png`
-                                link.click()
-                              }}
-                              className="btn btn-outline btn-sm"
-                            >
-                              <Download className="h-4 w-4 mr-2" />
-                              Export Image
-                            </button>
-                          )
-                        })()}
-                        {experiment.experimentType === 'Eye Tracking' && (
-                          <button
-                            onClick={async () => {
-                              if (window.confirm('Are you sure you want to delete this eye tracking experiment? This action cannot be undone.')) {
-                                try {
-                                  await deleteExperiment({
-                                    experimentId: experiment._id as any,
-                                    userId: undefined // Will check ownership on backend
-                                  })
-                                  // Refresh the page to show updated list
-                                  window.location.reload()
-                                } catch (error: any) {
-                                  alert(`Failed to delete experiment: ${error.message || 'Unknown error'}`)
-                                }
-                              }
-                            }}
-                            className="btn btn-outline btn-sm text-red-600 hover:text-red-700 hover:border-red-300"
-                            title="Delete experiment"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* Eye Tracking Results Preview */}
-                  {experiment.experimentType === 'Eye Tracking' && 
-                   experiment.eyeTrackingData && 
-                   experiment.status === 'completed' && (
-                    <div className="card-content">
-                      {imageUrl && experiment.eyeTrackingData.gazePoints ? (
-                        <div>
-                          {(() => {
-                            try {
-                              return (
-                                <EyeTrackingResultsWithDimensions
-                                  data={experiment.eyeTrackingData}
-                                  imageUrl={imageUrl}
-                                />
-                              )
-                            } catch (error) {
-                              console.error('Error rendering EyeTrackingResults:', error)
-                              return (
-                                <div className="text-center py-4">
-                                  <AlertCircle className="h-8 w-8 text-red-500 mx-auto mb-2" />
-                                  <p className="text-red-600">Error rendering eye tracking results</p>
-                                </div>
-                              )
-                            }
-                          })()}
-                        </div>
-                      ) : (
-                        <div className="text-center py-8">
-                          <AlertCircle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
-                          <h3 className="text-lg font-medium text-gray-900 mb-2">
-                            Eye Tracking Data Available
-                          </h3>
-                          <p className="text-gray-600 mb-4">
-                            {!imageUrl ? 'Image not available for visualization' : 'Eye tracking data format issue'}
-                          </p>
-                          <div className="bg-gray-50 p-4 rounded-lg">
-                            <h4 className="font-medium text-gray-900 mb-2">Data Summary</h4>
-                            <div className="text-sm text-gray-600 space-y-1">
-                              <div>Gaze points: {experiment.eyeTrackingData.gazePoints?.length || 0}</div>
-                              <div>Fixations: {experiment.eyeTrackingData.fixationPoints?.length || 0}</div>
-                              <div>Duration: {experiment.eyeTrackingData.sessionDuration ? Math.round(experiment.eyeTrackingData.sessionDuration / 1000) : 0}s</div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  
-                  {/* Other Experiment Types Preview */}
-                  {experiment.experimentType !== 'Eye Tracking' && experiment.results && (
-                    <div className="card-content">
-                      <div className="bg-gray-50 p-4 rounded-lg">
-                        <h3 className="font-medium text-gray-900 mb-2">Results Preview</h3>
-                        <p className="text-sm text-gray-600 mb-3">
-                          Click "View Details" to see full results
-                        </p>
-                        <button
-                          onClick={() => navigate(`/experiments/${experiment._id}`)}
-                          className="btn btn-primary btn-sm"
-                        >
-                          View Full Results
-                        </button>
-                      </div>
-                    </div>
+                  {eyeTrackingExps.length > 0 && (
+                    <CheckCircle className="h-5 w-5 text-green-500" />
                   )}
                 </div>
-              ))}
+                <div className="flex items-center space-x-2">
+                  {eyeTrackingExps.length === 0 && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        navigate(`/eye-tracking-experiment?pictureId=${pictureId}`)
+                      }}
+                      className="btn btn-sm btn-primary"
+                    >
+                      Run Experiment
+                    </button>
+                  )}
+                  {expandedPanels.eyeTracking ? (
+                    <ChevronUp className="h-5 w-5 text-gray-400" />
+                  ) : (
+                    <ChevronDown className="h-5 w-5 text-gray-400" />
+                  )}
+                </div>
+              </div>
+            </div>
+            {expandedPanels.eyeTracking && (
+              <div className="card-content">
+                {eyeTrackingExps.length > 0 ? (
+                  <div className="space-y-4">
+                    {eyeTrackingExps.map((exp) => (
+                      <div key={exp._id} className="border rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <div>
+                            <p className="text-sm text-gray-600">
+                              Completed {new Date(exp.createdAt).toLocaleString()}
+                            </p>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <button
+                              onClick={() => navigate(`/experiments/${exp._id}`)}
+                              className="btn btn-sm btn-primary"
+                            >
+                              View Results
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (window.confirm('Are you sure you want to delete this experiment? This action cannot be undone.')) {
+                                  try {
+                                    await deleteExperiment({
+                                      experimentId: exp._id as any,
+                                      userId: undefined
+                                    })
+                                    window.location.reload()
+                                  } catch (error: any) {
+                                    alert(`Failed to delete experiment: ${error.message || 'Unknown error'}`)
+                                  }
+                                }
+                              }}
+                              className="btn btn-sm btn-outline text-red-600 hover:text-red-700 hover:border-red-300"
+                              title="Delete experiment"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => navigate(`/eye-tracking-experiment?pictureId=${pictureId}`)}
+                          className="btn btn-sm btn-outline w-full"
+                        >
+                          Run New Experiment
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <Eye className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-gray-600 mb-4">
+                      No eye tracking experiments have been run yet.
+                    </p>
+                    <button
+                      onClick={() => navigate(`/eye-tracking-experiment?pictureId=${pictureId}`)}
+                      className="btn btn-primary"
+                    >
+                      Run Eye Tracking Experiment
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-        )}
+
+          {/* Value Study Panel */}
+          <div className="card">
+            <div 
+              className="card-header cursor-pointer hover:bg-gray-50 transition-colors"
+              onClick={() => togglePanel('valueStudy')}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <Palette className={`h-5 w-5 ${latestValueStudy ? 'text-green-600' : 'text-gray-400'}`} />
+                  <div>
+                    <h2 className="card-title">Value Study</h2>
+                    <p className="card-description">
+                      {latestValueStudy 
+                        ? `Completed ${new Date(latestValueStudy.createdAt).toLocaleDateString()}`
+                        : 'Not yet run'}
+                    </p>
+                  </div>
+                  {latestValueStudy && (
+                    <CheckCircle className="h-5 w-5 text-green-500" />
+                  )}
+                </div>
+                <div className="flex items-center space-x-2">
+                  {!latestValueStudy && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        // Expand the panel to show the run experiment button inside
+                        setExpandedPanels(prev => ({ ...prev, valueStudy: true }))
+                      }}
+                      className="btn btn-sm btn-primary"
+                    >
+                      View/Edit
+                    </button>
+                  )}
+                  {expandedPanels.valueStudy ? (
+                    <ChevronUp className="h-5 w-5 text-gray-400" />
+                  ) : (
+                    <ChevronDown className="h-5 w-5 text-gray-400" />
+                  )}
+                </div>
+              </div>
+            </div>
+            {expandedPanels.valueStudy && (
+              <div className="card-content">
+                {latestValueStudy && imageUrl && latestValueStudy.results ? (
+                  <ValueStudyResults
+                    originalImageUrl={imageUrl}
+                    initialResults={latestValueStudy.results as any}
+                    onSave={async (results) => {
+                      try {
+                        // Ensure the results structure matches what the mutation expects
+                        const formattedResults = {
+                          processedImageDataUrl: results.processedImageDataUrl,
+                          metadata: {
+                            width: results.metadata.width,
+                            height: results.metadata.height,
+                            diagonal: results.metadata.diagonal,
+                            originalFormat: results.metadata.originalFormat
+                          },
+                          parameters: {
+                            levels: results.parameters.levels,
+                            smoothness: results.parameters.smoothness,
+                            ...(results.parameters.useMedianBlur !== undefined && { useMedianBlur: results.parameters.useMedianBlur }),
+                            ...(results.parameters.meanCurvaturePasses !== undefined && { meanCurvaturePasses: results.parameters.meanCurvaturePasses })
+                          }
+                        }
+                        
+                        const response = await updateValueStudyResults({
+                          experimentId: latestValueStudy._id as any,
+                          results: formattedResults,
+                          status: 'completed'
+                        })
+                        
+                        if (response.success) {
+                          toast.success('Value Study settings saved!')
+                        } else {
+                          toast.error(response.message || 'Failed to save Value Study settings')
+                        }
+                      } catch (error: any) {
+                        console.error('Save error:', error)
+                        toast.error(error.message || 'Failed to save Value Study settings')
+                      }
+                    }}
+                  />
+                ) : (
+                  <div className="text-center py-8">
+                    <Palette className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-gray-600 mb-4">
+                      No value study has been run yet.
+                    </p>
+                    <button
+                      onClick={async () => {
+                        if (!imageUrl || !pictureId || processingValueStudy) return
+                        if (!userId && ipFetching) return
+                        
+                        setProcessingValueStudy(true)
+                        try {
+                          // Create experiment
+                          const result = await createExperiment({
+                            pictureId: pictureId as any,
+                            userId: userId || undefined,
+                            ipAddress: clientIP || undefined,
+                            experimentType: 'Value Study',
+                            parameters: {
+                              autoProcessed: true,
+                              defaultLevels: 5,
+                            }
+                          })
+                          
+                          // Process image
+                          const processingResult = await processValueStudy(imageUrl, {
+                            levels: 5,
+                          })
+                          
+                          // Save results
+                          await updateValueStudyResults({
+                            experimentId: result.experimentId as any,
+                            results: processingResult,
+                            status: 'completed'
+                          })
+                          
+                          toast.success('Value Study completed!')
+                          // The query will automatically refresh and show the results
+                        } catch (error: any) {
+                          console.error('Value Study error:', error)
+                          toast.error(error.message || 'Failed to create Value Study')
+                        } finally {
+                          setProcessingValueStudy(false)
+                        }
+                      }}
+                      disabled={processingValueStudy || (!userId && ipFetching)}
+                      className="btn btn-primary"
+                    >
+                      {processingValueStudy ? 'Processing...' : 'Run Value Study'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Edge Detection Panel */}
+          <div className="card">
+            <div 
+              className="card-header cursor-pointer hover:bg-gray-50 transition-colors"
+              onClick={() => togglePanel('edgeDetection')}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <Map className={`h-5 w-5 ${latestEdgeDetection ? 'text-green-600' : 'text-gray-400'}`} />
+                  <div>
+                    <h2 className="card-title">Edge Detection</h2>
+                    <p className="card-description">
+                      {latestEdgeDetection 
+                        ? `Completed ${new Date(latestEdgeDetection.createdAt).toLocaleDateString()}`
+                        : 'Not yet run'}
+                    </p>
+                  </div>
+                  {latestEdgeDetection && (
+                    <CheckCircle className="h-5 w-5 text-green-500" />
+                  )}
+                </div>
+                <div className="flex items-center space-x-2">
+                  {!latestEdgeDetection && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        // Expand the panel to show the run experiment button inside
+                        setExpandedPanels(prev => ({ ...prev, edgeDetection: true }))
+                      }}
+                      className="btn btn-sm btn-primary"
+                    >
+                      View/Edit
+                    </button>
+                  )}
+                  {expandedPanels.edgeDetection ? (
+                    <ChevronUp className="h-5 w-5 text-gray-400" />
+                  ) : (
+                    <ChevronDown className="h-5 w-5 text-gray-400" />
+                  )}
+                </div>
+              </div>
+            </div>
+            {expandedPanels.edgeDetection && (
+              <div className="card-content">
+                {latestEdgeDetection && imageUrl && latestEdgeDetection.results ? (
+                  <EdgeDetectionResults
+                    originalImageUrl={imageUrl}
+                    initialResults={latestEdgeDetection.results as any}
+                    onSave={async (results) => {
+                      try {
+                        // Ensure the results structure matches what the mutation expects
+                        const formattedResults = {
+                          processedImageDataUrl: results.processedImageDataUrl,
+                          metadata: {
+                            width: results.metadata.width,
+                            height: results.metadata.height,
+                            diagonal: results.metadata.diagonal,
+                            originalFormat: results.metadata.originalFormat
+                          },
+                          parameters: {
+                            blurRadius: results.parameters.blurRadius,
+                            threshold: results.parameters.threshold,
+                            ...(results.parameters.invert === true ? { invert: true } : results.parameters.invert === false ? { invert: false } : {})
+                          }
+                        }
+                        
+                        const response = await updateEdgeDetectionResults({
+                          experimentId: latestEdgeDetection._id as any,
+                          results: formattedResults,
+                          status: 'completed'
+                        })
+                        
+                        if (response.success) {
+                          toast.success('Edge Detection settings saved!')
+                        } else {
+                          toast.error(response.message || 'Failed to save Edge Detection settings')
+                        }
+                      } catch (error: any) {
+                        console.error('Save error:', error)
+                        toast.error(error.message || 'Failed to save Edge Detection settings')
+                      }
+                    }}
+                  />
+                ) : (
+                  <div className="text-center py-8">
+                    <Map className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-gray-600 mb-4">
+                      No edge detection has been run yet.
+                    </p>
+                    <button
+                      onClick={async () => {
+                        if (!imageUrl || !pictureId || processingEdgeDetection) return
+                        if (!userId && ipFetching) return
+                        
+                        setProcessingEdgeDetection(true)
+                        try {
+                          // Create experiment
+                          const result = await createExperiment({
+                            pictureId: pictureId as any,
+                            userId: userId || undefined,
+                            ipAddress: clientIP || undefined,
+                            experimentType: 'Edge Detection',
+                            parameters: {
+                              autoProcessed: true,
+                              defaultBlurRadius: 3,
+                              defaultThreshold: 3,
+                            }
+                          })
+                          
+                          // Process image
+                          const processingResult = await processEdgeDetection(imageUrl, {
+                            blurRadius: 3,
+                            threshold: 3,
+                            invert: true
+                          })
+                          
+                          // Save results
+                          await updateEdgeDetectionResults({
+                            experimentId: result.experimentId as any,
+                            results: processingResult,
+                            status: 'completed'
+                          })
+                          
+                          toast.success('Edge Detection completed!')
+                          // The query will automatically refresh and show the results
+                        } catch (error: any) {
+                          console.error('Edge Detection error:', error)
+                          toast.error(error.message || 'Failed to create Edge Detection')
+                        } finally {
+                          setProcessingEdgeDetection(false)
+                        }
+                      }}
+                      disabled={processingEdgeDetection || (!userId && ipFetching)}
+                      className="btn btn-primary"
+                    >
+                      {processingEdgeDetection ? 'Processing...' : 'Run Edge Detection'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   )

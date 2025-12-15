@@ -427,20 +427,20 @@ export function ExperimentDetails() {
                 )}
                 {!isValueStudy && (
                   <button
-                    onClick={() => navigate(`/value-study-experiment?pictureId=${experiment.pictureId}`)}
+                    onClick={() => navigate(`/picture-experiments?pictureId=${experiment.pictureId}`)}
                     className="btn btn-outline"
                   >
                     <Palette className="h-4 w-4 mr-2" />
-                    Run Value Study
+                    View Value Study
                   </button>
                 )}
                 {!isEdgeDetection && (
                   <button
-                    onClick={() => navigate(`/edge-detection-experiment?pictureId=${experiment.pictureId}`)}
+                    onClick={() => navigate(`/picture-experiments?pictureId=${experiment.pictureId}`)}
                     className="btn btn-outline"
                   >
                     <Map className="h-4 w-4 mr-2" />
-                    Run Edge Detection
+                    View Edge Detection
                   </button>
                 )}
                 <button
