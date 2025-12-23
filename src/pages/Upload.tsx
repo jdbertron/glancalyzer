@@ -173,6 +173,7 @@ export function Upload() {
       console.log('Upload completed, setting success state:', { pictureId: pictureResult.pictureId })
       
       // Extract CLIP features in the browser and classify
+      // Note: This is a non-critical feature - if it fails, the upload still succeeds
       try {
         toast.loading('Extracting image features...', { id: 'classify' })
         const clipFeatures = await extractCLIPFeatures(uploadedFile)
@@ -186,11 +187,15 @@ export function Upload() {
         if (classificationResult.success) {
           toast.success('Image classified successfully!', { id: 'classify' })
         } else {
-          toast.error(classificationResult.error || 'Classification failed', { id: 'classify' })
+          toast.dismiss('classify')
+          // Don't show error toast for classification failures - it's non-critical
+          console.warn('Image classification failed (non-critical):', classificationResult.error)
         }
       } catch (error) {
-        console.error('Classification error:', error)
-        toast.error(`Classification failed: ${error instanceof Error ? error.message : 'Unknown error'}`, { id: 'classify' })
+        toast.dismiss('classify')
+        // Don't show error toast for CLIP failures - it's a non-critical feature
+        // The image upload already succeeded, so this is just a warning
+        console.warn('Image classification unavailable (non-critical):', error instanceof Error ? error.message : 'Unknown error')
       }
       
       // Reset file input

@@ -91,6 +91,50 @@ export function PictureExperiments() {
   const createExperiment = useMutation(api.experiments.createExperiment)
   const updateValueStudyResults = useMutation(api.experiments.updateValueStudyResults)
   const updateEdgeDetectionResults = useMutation(api.experiments.updateEdgeDetectionResults)
+  const generateUploadUrl = useMutation(api.pictures.generateUploadUrl)
+  
+  // Helper function to convert data URL to Blob and upload to Convex Storage
+  const uploadDataUrlToStorage = async (dataUrl: string, fileName: string): Promise<string> => {
+    try {
+      // Convert data URL to Blob
+      const response = await fetch(dataUrl)
+      if (!response.ok) {
+        throw new Error(`Failed to fetch data URL: ${response.statusText}`)
+      }
+      const blob = await response.blob()
+      
+      // Generate upload URL
+      const uploadUrl = await generateUploadUrl()
+      
+      // Upload to Convex Storage using POST
+      const uploadResult = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': blob.type || 'image/png' },
+        body: blob,
+      })
+      
+      if (!uploadResult.ok) {
+        const errorText = await uploadResult.text()
+        throw new Error(`Upload failed: ${uploadResult.statusText} - ${errorText}`)
+      }
+      
+      const result = await uploadResult.json()
+      if (!result.storageId) {
+        throw new Error('Upload response missing storageId')
+      }
+      
+      return result.storageId
+    } catch (error: any) {
+      console.error('Error uploading to storage:', error)
+      throw new Error(`Failed to upload image to storage: ${error.message || 'Unknown error'}`)
+    }
+  }
+  
+  // State to store converted results (storageId -> dataUrl)
+  const [convertedResults, setConvertedResults] = useState<{
+    valueStudy?: any
+    edgeDetection?: any
+  }>({})
   
   const imageUrl = useQuery(
     api.pictures.getImageUrl,
@@ -120,6 +164,160 @@ export function PictureExperiments() {
     exp.experimentType === 'Eye Tracking' && exp.status === 'completed'
   ) || []
 
+  // Get image URLs from storage for saved results (after latestValueStudy/latestEdgeDetection are computed)
+  const valueStudyStorageId = latestValueStudy?.results?.processedImageStorageId
+  const edgeDetectionStorageId = latestEdgeDetection?.results?.processedImageStorageId
+  
+  const valueStudyImageUrl = useQuery(
+    api.pictures.getImageUrl,
+    valueStudyStorageId ? { fileId: valueStudyStorageId as any } : 'skip'
+  )
+  const edgeDetectionImageUrl = useQuery(
+    api.pictures.getImageUrl,
+    edgeDetectionStorageId ? { fileId: edgeDetectionStorageId as any } : 'skip'
+  )
+  
+  // Convert storage URLs to data URLs when available (for backward compatibility)
+  useEffect(() => {
+    const convertUrlToDataUrl = async (url: string | null | undefined): Promise<string | null> => {
+      if (!url || typeof url !== 'string') return null
+      try {
+        const response = await fetch(url)
+        if (!response.ok) {
+          throw new Error(`Failed to fetch image: ${response.statusText}`)
+        }
+        const blob = await response.blob()
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onloadend = () => resolve(reader.result as string)
+          reader.onerror = () => reject(new Error('FileReader failed to read blob'))
+          reader.readAsDataURL(blob)
+        })
+      } catch (error) {
+        console.error('Failed to convert URL to data URL:', error)
+        return null
+      }
+    }
+    
+    // Handle Value Study: convert storage ID to data URL if needed
+    if (latestValueStudy?.results) {
+      const storageId = latestValueStudy.results.processedImageStorageId
+      const existingDataUrl = latestValueStudy.results.processedImageDataUrl
+      
+      // If results already have data URL (old format), use it directly
+      if (existingDataUrl && typeof existingDataUrl === 'string') {
+        setConvertedResults(prev => {
+          // Only update if different to avoid unnecessary re-renders
+          if (prev.valueStudy?.processedImageDataUrl !== existingDataUrl) {
+            return {
+              ...prev,
+              valueStudy: latestValueStudy.results
+            }
+          }
+          return prev
+        })
+      }
+      // If results have storage ID (new format), fetch and convert
+      else if (storageId) {
+        // Check if we already converted this storage ID
+        const currentConverted = convertedResults.valueStudy
+        if (currentConverted?.processedImageStorageId === storageId && currentConverted?.processedImageDataUrl) {
+          // Already converted, skip
+          return
+        }
+        
+        // Wait for the image URL query to complete
+        if (valueStudyImageUrl === undefined) {
+          // Query is still loading, wait for it
+          return
+        }
+        
+        if (valueStudyImageUrl && typeof valueStudyImageUrl === 'string') {
+          // URL is available, convert it
+          convertUrlToDataUrl(valueStudyImageUrl).then(dataUrl => {
+            if (dataUrl && latestValueStudy?.results && latestValueStudy.results.processedImageStorageId === storageId) {
+              setConvertedResults(prev => ({
+                ...prev,
+                valueStudy: {
+                  ...latestValueStudy.results,
+                  processedImageDataUrl: dataUrl
+                }
+              }))
+            }
+          }).catch(error => {
+            console.error('Error converting Value Study image URL:', error)
+          })
+        } else if (valueStudyImageUrl === null) {
+          // Query returned null - storage ID might be invalid
+          console.warn('Value Study storage ID returned null URL:', storageId)
+        }
+      }
+    } else {
+      // Clear converted results if no value study exists
+      setConvertedResults(prev => {
+        if (prev.valueStudy) {
+          return { ...prev, valueStudy: undefined }
+        }
+        return prev
+      })
+    }
+    
+    // Handle Edge Detection: convert storage ID to data URL if needed
+    if (latestEdgeDetection?.results) {
+      const storageId = latestEdgeDetection.results.processedImageStorageId
+      const existingDataUrl = latestEdgeDetection.results.processedImageDataUrl
+      
+      // If results already have data URL (old format), use it directly
+      if (existingDataUrl && typeof existingDataUrl === 'string') {
+        setConvertedResults(prev => {
+          if (prev.edgeDetection?.processedImageDataUrl !== existingDataUrl) {
+            return {
+              ...prev,
+              edgeDetection: latestEdgeDetection.results
+            }
+          }
+          return prev
+        })
+      }
+      // If results have storage ID (new format), fetch and convert
+      else if (storageId) {
+        const currentConverted = convertedResults.edgeDetection
+        if (currentConverted?.processedImageStorageId === storageId && currentConverted?.processedImageDataUrl) {
+          return
+        }
+        
+        if (edgeDetectionImageUrl === undefined) {
+          return
+        }
+        
+        if (edgeDetectionImageUrl && typeof edgeDetectionImageUrl === 'string') {
+          convertUrlToDataUrl(edgeDetectionImageUrl).then(dataUrl => {
+            if (dataUrl && latestEdgeDetection?.results && latestEdgeDetection.results.processedImageStorageId === storageId) {
+              setConvertedResults(prev => ({
+                ...prev,
+                edgeDetection: {
+                  ...latestEdgeDetection.results,
+                  processedImageDataUrl: dataUrl
+                }
+              }))
+            }
+          }).catch(error => {
+            console.error('Error converting Edge Detection image URL:', error)
+          })
+        } else if (edgeDetectionImageUrl === null) {
+          console.warn('Edge Detection storage ID returned null URL:', storageId)
+        }
+      }
+    } else {
+      setConvertedResults(prev => {
+        if (prev.edgeDetection) {
+          return { ...prev, edgeDetection: undefined }
+        }
+        return prev
+      })
+    }
+  }, [valueStudyImageUrl, edgeDetectionImageUrl, latestValueStudy, latestEdgeDetection, convertedResults.valueStudy?.processedImageStorageId, convertedResults.edgeDetection?.processedImageStorageId])
+
   // Auto-expand panels that have results
   useEffect(() => {
     if (latestValueStudy && !expandedPanels.valueStudy) {
@@ -128,7 +326,151 @@ export function PictureExperiments() {
     if (latestEdgeDetection && !expandedPanels.edgeDetection) {
       setExpandedPanels(prev => ({ ...prev, edgeDetection: true }))
     }
-  }, [latestValueStudy, latestEdgeDetection])
+  }, [latestValueStudy, latestEdgeDetection, expandedPanels.valueStudy, expandedPanels.edgeDetection])
+
+  // Auto-run Value Study when panel opens if no results exist
+  useEffect(() => {
+    if (
+      expandedPanels.valueStudy &&
+      !latestValueStudy &&
+      imageUrl &&
+      pictureId &&
+      !processingValueStudy &&
+      (userId || (!ipFetching && clientIP))
+    ) {
+      // Auto-run Value Study
+      const runAutoValueStudy = async () => {
+        setProcessingValueStudy(true)
+        try {
+          // Create experiment
+          const result = await createExperiment({
+            pictureId: pictureId as any,
+            userId: userId || undefined,
+            ipAddress: clientIP || undefined,
+            experimentType: 'Value Study',
+            parameters: {
+              autoProcessed: true,
+              defaultLevels: 5,
+            }
+          })
+          
+          // Process image
+          const processingResult = await processValueStudy(imageUrl, {
+            levels: 5,
+          })
+          
+          // Upload processed image to storage
+          toast.loading('Uploading image...', { id: 'upload-inline' })
+          const storageId = await uploadDataUrlToStorage(
+            processingResult.processedImageDataUrl,
+            `value-study-${result.experimentId}-${Date.now()}.png`
+          )
+          toast.dismiss('upload-inline')
+          
+          // Format results with storage ID
+          const formattedResults = {
+            processedImageStorageId: storageId,
+            metadata: processingResult.metadata,
+            parameters: processingResult.parameters
+          }
+          
+          // Save results
+          const saveResponse = await updateValueStudyResults({
+            experimentId: result.experimentId as any,
+            results: formattedResults,
+            status: 'completed'
+          })
+          
+          if (saveResponse.success) {
+            toast.success('Value Study completed!')
+          } else {
+            toast.error(saveResponse.message || 'Failed to save Value Study results')
+          }
+          // The query will automatically refresh and show the results
+        } catch (error: any) {
+          console.error('Value Study error:', error)
+          toast.error(error.message || 'Failed to create Value Study')
+        } finally {
+          setProcessingValueStudy(false)
+        }
+      }
+      
+      runAutoValueStudy()
+    }
+  }, [expandedPanels.valueStudy, latestValueStudy, imageUrl, pictureId, processingValueStudy, userId, ipFetching, clientIP, createExperiment, updateValueStudyResults, uploadDataUrlToStorage])
+
+  // Auto-run Edge Detection when panel opens if no results exist
+  useEffect(() => {
+    if (
+      expandedPanels.edgeDetection &&
+      !latestEdgeDetection &&
+      imageUrl &&
+      pictureId &&
+      !processingEdgeDetection &&
+      (userId || (!ipFetching && clientIP))
+    ) {
+      // Auto-run Edge Detection
+      const runAutoEdgeDetection = async () => {
+        setProcessingEdgeDetection(true)
+        try {
+          // Create experiment
+          const result = await createExperiment({
+            pictureId: pictureId as any,
+            userId: userId || undefined,
+            ipAddress: clientIP || undefined,
+            experimentType: 'Edge Detection',
+            parameters: {
+              autoProcessed: true,
+              defaultBlurRadius: 7,
+              defaultThreshold: 30,
+            }
+          })
+          
+          // Process image
+          const processingResult = await processEdgeDetection(imageUrl, {
+            blurRadius: 7,
+            threshold: 30,
+          })
+          
+          // Upload processed image to storage
+          toast.loading('Uploading image...', { id: 'upload-inline-ed' })
+          const storageId = await uploadDataUrlToStorage(
+            processingResult.processedImageDataUrl,
+            `edge-detection-${result.experimentId}-${Date.now()}.png`
+          )
+          toast.dismiss('upload-inline-ed')
+          
+          // Format results with storage ID
+          const formattedResults = {
+            processedImageStorageId: storageId,
+            metadata: processingResult.metadata,
+            parameters: processingResult.parameters
+          }
+          
+          // Save results
+          const saveResponse = await updateEdgeDetectionResults({
+            experimentId: result.experimentId as any,
+            results: formattedResults,
+            status: 'completed'
+          })
+          
+          if (saveResponse.success) {
+            toast.success('Edge Detection completed!')
+          } else {
+            toast.error(saveResponse.message || 'Failed to save Edge Detection results')
+          }
+          // The query will automatically refresh and show the results
+        } catch (error: any) {
+          console.error('Edge Detection error:', error)
+          toast.error(error.message || 'Failed to create Edge Detection')
+        } finally {
+          setProcessingEdgeDetection(false)
+        }
+      }
+      
+      runAutoEdgeDetection()
+    }
+  }, [expandedPanels.edgeDetection, latestEdgeDetection, imageUrl, pictureId, processingEdgeDetection, userId, ipFetching, clientIP, createExperiment, updateEdgeDetectionResults, uploadDataUrlToStorage])
 
   // Add error boundary for component crashes
   if (experiments === undefined || picture === undefined) {
@@ -561,45 +903,84 @@ export function PictureExperiments() {
             {expandedPanels.valueStudy && (
               <div className="card-content">
                 {latestValueStudy && imageUrl && latestValueStudy.results ? (
-                  <ValueStudyResults
-                    originalImageUrl={imageUrl}
-                    initialResults={latestValueStudy.results as any}
-                    onSave={async (results) => {
-                      try {
-                        // Ensure the results structure matches what the mutation expects
-                        const formattedResults = {
-                          processedImageDataUrl: results.processedImageDataUrl,
-                          metadata: {
-                            width: results.metadata.width,
-                            height: results.metadata.height,
-                            diagonal: results.metadata.diagonal,
-                            originalFormat: results.metadata.originalFormat
-                          },
-                          parameters: {
-                            levels: results.parameters.levels,
-                            smoothness: results.parameters.smoothness,
-                            ...(results.parameters.useMedianBlur !== undefined && { useMedianBlur: results.parameters.useMedianBlur }),
-                            ...(results.parameters.meanCurvaturePasses !== undefined && { meanCurvaturePasses: results.parameters.meanCurvaturePasses })
+                  // Check if we have a storage ID that needs conversion but don't have converted data URL yet
+                  (latestValueStudy.results.processedImageStorageId && 
+                   !convertedResults.valueStudy?.processedImageDataUrl && 
+                   !latestValueStudy.results.processedImageDataUrl) ? (
+                    <div className="text-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto mb-2"></div>
+                      <p className="text-gray-600">Loading Value Study results...</p>
+                    </div>
+                  ) : (
+                    <ValueStudyResults
+                      originalImageUrl={imageUrl}
+                      initialResults={(() => {
+                        // Prefer converted results if available (has data URL)
+                        const converted = convertedResults.valueStudy
+                        if (converted && converted.processedImageDataUrl) {
+                          return converted as any
+                        }
+                        // If we have raw results with data URL (old format), use them
+                        if (latestValueStudy.results.processedImageDataUrl) {
+                          return latestValueStudy.results as any
+                        }
+                        // If we have storage ID but no conversion yet, we should have shown loading above
+                        // But if we get here, try to use the raw results (component might handle it)
+                        console.warn('Value Study results have storage ID but no converted data URL - conversion may have failed')
+                        return latestValueStudy.results as any
+                      })()}
+                      onSave={async (results) => {
+                        try {
+                          // Upload processed image to Convex Storage
+                          toast.loading('Uploading image...', { id: 'upload-image' })
+                          const storageId = await uploadDataUrlToStorage(
+                            results.processedImageDataUrl,
+                            `value-study-${latestValueStudy._id}-${Date.now()}.png`
+                          )
+                          toast.dismiss('upload-image')
+                          
+                          // Format results with storage ID instead of data URL
+                          const formattedResults: any = {
+                            processedImageStorageId: storageId,
+                            metadata: {
+                              width: Number(results.metadata.width),
+                              height: Number(results.metadata.height),
+                              diagonal: Number(results.metadata.diagonal),
+                              originalFormat: String(results.metadata.originalFormat)
+                            },
+                            parameters: {
+                              levels: Number(results.parameters.levels),
+                              smoothness: Number(results.parameters.smoothness)
+                            }
                           }
+                          
+                          // Only include optional fields if they're defined
+                          if (results.parameters.useMedianBlur !== undefined) {
+                            formattedResults.parameters.useMedianBlur = Boolean(results.parameters.useMedianBlur)
+                          }
+                          if (results.parameters.meanCurvaturePasses !== undefined) {
+                            formattedResults.parameters.meanCurvaturePasses = Number(results.parameters.meanCurvaturePasses)
+                          }
+                          
+                          const response = await updateValueStudyResults({
+                            experimentId: latestValueStudy._id as any,
+                            results: formattedResults,
+                            status: 'completed'
+                          })
+                          
+                          if (response.success) {
+                            toast.success('Value Study settings saved!')
+                          } else {
+                            toast.error(response.message || 'Failed to save Value Study settings')
+                          }
+                        } catch (error: any) {
+                          toast.dismiss('upload-image')
+                          console.error('Save error:', error)
+                          toast.error(error.message || 'Failed to save Value Study settings')
                         }
-                        
-                        const response = await updateValueStudyResults({
-                          experimentId: latestValueStudy._id as any,
-                          results: formattedResults,
-                          status: 'completed'
-                        })
-                        
-                        if (response.success) {
-                          toast.success('Value Study settings saved!')
-                        } else {
-                          toast.error(response.message || 'Failed to save Value Study settings')
-                        }
-                      } catch (error: any) {
-                        console.error('Save error:', error)
-                        toast.error(error.message || 'Failed to save Value Study settings')
-                      }
-                    }}
-                  />
+                      }}
+                    />
+                  )
                 ) : (
                   <div className="text-center py-8">
                     <Palette className="h-12 w-12 text-gray-400 mx-auto mb-4" />
@@ -630,14 +1011,35 @@ export function PictureExperiments() {
                             levels: 5,
                           })
                           
+                          // Upload processed image to storage
+                          toast.loading('Uploading image...', { id: 'upload-inline' })
+                          const storageId = await uploadDataUrlToStorage(
+                            processingResult.processedImageDataUrl,
+                            `value-study-${result.experimentId}-${Date.now()}.png`
+                          )
+                          toast.dismiss('upload-inline')
+                          
+                          // Format results with storage ID
+                          const formattedResults = {
+                            processedImageStorageId: storageId,
+                            metadata: processingResult.metadata,
+                            parameters: processingResult.parameters
+                          }
+                          
                           // Save results
-                          await updateValueStudyResults({
+                          const saveResponse = await updateValueStudyResults({
                             experimentId: result.experimentId as any,
-                            results: processingResult,
+                            results: formattedResults,
                             status: 'completed'
                           })
                           
-                          toast.success('Value Study completed!')
+                          if (saveResponse.success) {
+                            toast.success('Value Study completed!')
+                            // Ensure the panel is expanded to show results
+                            setExpandedPanels(prev => ({ ...prev, valueStudy: true }))
+                          } else {
+                            toast.error(saveResponse.message || 'Failed to save Value Study results')
+                          }
                           // The query will automatically refresh and show the results
                         } catch (error: any) {
                           console.error('Value Study error:', error)
@@ -704,23 +1106,40 @@ export function PictureExperiments() {
                 {latestEdgeDetection && imageUrl && latestEdgeDetection.results ? (
                   <EdgeDetectionResults
                     originalImageUrl={imageUrl}
-                    initialResults={latestEdgeDetection.results as any}
+                    initialResults={(convertedResults.edgeDetection || latestEdgeDetection.results) as any}
                     onSave={async (results) => {
                       try {
-                        // Ensure the results structure matches what the mutation expects
-                        const formattedResults = {
-                          processedImageDataUrl: results.processedImageDataUrl,
+                        // Validate data URL
+                        if (!results.processedImageDataUrl || typeof results.processedImageDataUrl !== 'string') {
+                          throw new Error('Invalid processed image data URL')
+                        }
+                        
+                        // Upload processed image to Convex Storage
+                        toast.loading('Uploading image...', { id: 'upload-image' })
+                        const storageId = await uploadDataUrlToStorage(
+                          results.processedImageDataUrl,
+                          `edge-detection-${latestEdgeDetection._id}-${Date.now()}.png`
+                        )
+                        toast.dismiss('upload-image')
+                        
+                        // Format results with storage ID instead of data URL
+                        const formattedResults: any = {
+                          processedImageStorageId: storageId,
                           metadata: {
-                            width: results.metadata.width,
-                            height: results.metadata.height,
-                            diagonal: results.metadata.diagonal,
-                            originalFormat: results.metadata.originalFormat
+                            width: Number(results.metadata.width),
+                            height: Number(results.metadata.height),
+                            diagonal: Number(results.metadata.diagonal),
+                            originalFormat: String(results.metadata.originalFormat)
                           },
                           parameters: {
-                            blurRadius: results.parameters.blurRadius,
-                            threshold: results.parameters.threshold,
-                            ...(results.parameters.invert === true ? { invert: true } : results.parameters.invert === false ? { invert: false } : {})
+                            blurRadius: Number(results.parameters.blurRadius),
+                            threshold: Number(results.parameters.threshold)
                           }
+                        }
+                        
+                        // Only include invert if it's explicitly set (optional field)
+                        if (results.parameters.invert !== undefined) {
+                          formattedResults.parameters.invert = Boolean(results.parameters.invert)
                         }
                         
                         const response = await updateEdgeDetectionResults({
@@ -735,6 +1154,7 @@ export function PictureExperiments() {
                           toast.error(response.message || 'Failed to save Edge Detection settings')
                         }
                       } catch (error: any) {
+                        toast.dismiss('upload-image')
                         console.error('Save error:', error)
                         toast.error(error.message || 'Failed to save Edge Detection settings')
                       }
@@ -773,14 +1193,33 @@ export function PictureExperiments() {
                             invert: true
                           })
                           
+                          // Upload processed image to storage
+                          toast.loading('Uploading image...', { id: 'upload-inline' })
+                          const storageId = await uploadDataUrlToStorage(
+                            processingResult.processedImageDataUrl,
+                            `edge-detection-${result.experimentId}-${Date.now()}.png`
+                          )
+                          toast.dismiss('upload-inline')
+                          
+                          // Format results with storage ID
+                          const formattedResults = {
+                            processedImageStorageId: storageId,
+                            metadata: processingResult.metadata,
+                            parameters: processingResult.parameters
+                          }
+                          
                           // Save results
-                          await updateEdgeDetectionResults({
+                          const saveResponse = await updateEdgeDetectionResults({
                             experimentId: result.experimentId as any,
-                            results: processingResult,
+                            results: formattedResults,
                             status: 'completed'
                           })
                           
-                          toast.success('Edge Detection completed!')
+                          if (saveResponse.success) {
+                            toast.success('Edge Detection completed!')
+                          } else {
+                            toast.error(saveResponse.message || 'Failed to save Edge Detection results')
+                          }
                           // The query will automatically refresh and show the results
                         } catch (error: any) {
                           console.error('Edge Detection error:', error)
@@ -804,3 +1243,5 @@ export function PictureExperiments() {
     </div>
   )
 }
+
+
