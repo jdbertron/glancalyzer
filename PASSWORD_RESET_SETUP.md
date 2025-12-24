@@ -14,8 +14,8 @@ The password reset flow uses Convex Auth's built-in OTP (One-Time Password) syst
 ### Required Variables
 
 - **`RESEND_API_KEY`**: Your Resend API key
-  - Value: `re_XPrVfaR4_QJFMywBzYgkPXF3HR1hmjU9G`
-  - ⚠️ **Security Note**: Keep this secret! Never commit it to git.
+  - Get your API key from [Resend Dashboard](https://resend.com/api-keys)
+  - ⚠️ **Security Note**: Keep this secret! Never commit it to git or expose it in source code.
 
 - **`FRONTEND_URL`**: Your frontend URL
   - **Development**: `http://localhost:5173`
