@@ -5,8 +5,12 @@ import { api } from '../../convex/_generated/api'
 import toast from 'react-hot-toast'
 
 export function useAuth() {
-  const { isLoading, isAuthenticated } = useConvexAuth()
+  const { isLoading, isAuthenticated: convexIsAuthenticated } = useConvexAuth()
   const { signIn, signOut } = useAuthActions()
+  
+  // Track login state - set immediately on login, cleared on logout
+  // This allows UI to update immediately without waiting for async queries
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false)
   
   // WORKAROUND: Extract sessionId from JWT token in localStorage
   // This bypasses the WebSocket authentication issue
@@ -118,13 +122,44 @@ export function useAuth() {
     return null
   }
   
-  // Extract sessionId on mount
+  // Check if user is logged in by checking for JWT token in localStorage
+  const checkIfLoggedIn = (): boolean => {
+    try {
+      if (typeof window === 'undefined') return false
+      
+      // Check for Convex Auth JWT token
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)
+        if (!key) continue
+        
+        const hasConvex = key.toLowerCase().includes('convex')
+        const hasJWT = key.toLowerCase().includes('jwt')
+        const hasAuth = key.toLowerCase().includes('auth')
+        const isConvexAuthJWT = hasConvex && (hasJWT || hasAuth)
+        
+        if (isConvexAuthJWT) {
+          const value = localStorage.getItem(key)
+          if (value && value.length > 50) {
+            return true
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[useAuth] Error checking login status:', error)
+    }
+    return false
+  }
+  
+  // Extract sessionId on mount and check login status
   useEffect(() => {
     // Try immediately
     extractSessionId()
     
+    // Check if user is logged in based on localStorage
+    const loggedIn = checkIfLoggedIn()
+    setIsAuthenticated(loggedIn)
+    
     // Also try a few times with delays (in case token is stored asynchronously)
-    // But don't poll aggressively - just a few retries
     let attempts = 0
     const maxAttempts = 3
     const retryInterval = setInterval(() => {
@@ -141,18 +176,22 @@ export function useAuth() {
     }
   }, []) // Only run on mount
   
-  // Listen for storage changes (in case token is updated)
+  // Listen for storage changes (in case token is updated from another window/tab)
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key && (e.key.includes('convex') || e.key.includes('auth'))) {
-        console.log('[useAuth] Storage changed, re-extracting sessionId')
+        console.log('[useAuth] Storage changed (from another window), re-extracting sessionId')
         extractSessionId()
+        // Update login state based on current localStorage
+        const loggedIn = checkIfLoggedIn()
+        setIsAuthenticated(loggedIn)
       }
     }
     
     window.addEventListener('storage', handleStorageChange)
     return () => window.removeEventListener('storage', handleStorageChange)
   }, [])
+  
   
   // Also extract sessionId when isAuthenticated changes (after sign-in)
   useEffect(() => {
@@ -161,6 +200,8 @@ export function useAuth() {
       setTimeout(() => {
         extractSessionId()
       }, 500)
+      // Update login state
+      setIsAuthenticated(true)
     }
   }, [isAuthenticated])
   
@@ -202,24 +243,18 @@ export function useAuth() {
       console.log('SignIn result keys:', result ? Object.keys(result) : 'null')
       console.log('SignIn result stringified:', JSON.stringify(result))
       
+      // Set login state immediately - UI will update right away
+      setIsAuthenticated(true)
+      
       // After sign-in, extract the new sessionId from the token
       // This allows the workaround query to work
-      // The token should be stored immediately, but we'll try a few times to be safe
       if (typeof window !== 'undefined') {
-        // Try immediately, then with delays
-        extractSessionId() // Try immediately
+        // Try immediately
+        extractSessionId()
+        // Also try with a short delay in case token storage is slightly async
         setTimeout(() => {
-          console.log('[useAuth] Retrying sessionId extraction after sign-in (500ms)')
           extractSessionId()
-        }, 500)
-        setTimeout(() => {
-          console.log('[useAuth] Retrying sessionId extraction after sign-in (1500ms)')
-          extractSessionId()
-        }, 1500)
-        setTimeout(() => {
-          console.log('[useAuth] Retrying sessionId extraction after sign-in (3000ms)')
-          extractSessionId()
-        }, 3000)
+        }, 100)
       }
       
       toast.success('Login successful')
@@ -228,6 +263,8 @@ export function useAuth() {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Login failed'
       toast.error(message)
+      // Clear login state on error
+      setIsAuthenticated(false)
       throw error
     }
   }
@@ -245,18 +282,25 @@ export function useAuth() {
       
       await signIn('password', formData)
       
+      // Set login state immediately - UI will update right away
+      setIsAuthenticated(true)
+      
       // After registration, extract the new sessionId from the token
       if (typeof window !== 'undefined') {
-        // Try a few times with delays
-        setTimeout(() => extractSessionId(), 500)
-        setTimeout(() => extractSessionId(), 1500)
-        setTimeout(() => extractSessionId(), 3000)
+        // Try immediately
+        extractSessionId()
+        // Also try with a short delay in case token storage is slightly async
+        setTimeout(() => {
+          extractSessionId()
+        }, 100)
       }
       
       toast.success('Registration successful')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Registration failed'
       toast.error(message)
+      // Clear login state on error
+      setIsAuthenticated(false)
       throw error
     }
   }
@@ -264,9 +308,10 @@ export function useAuth() {
   const logout = async () => {
     try {
       await signOut()
-      // Clear sessionId on logout
+      // Clear sessionId and login state on logout
       setSessionId(null)
       sessionIdRef.current = null
+      setIsAuthenticated(false)
       toast.success('Logged out successfully')
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Logout failed'
@@ -278,7 +323,7 @@ export function useAuth() {
     user,
     userId: user?._id ?? null,
     isLoading,
-    isAuthenticated,
+    isAuthenticated, // State-based login status - updates immediately on login/logout
     login,
     register,
     logout,

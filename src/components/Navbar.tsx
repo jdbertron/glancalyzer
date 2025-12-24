@@ -7,15 +7,11 @@ interface NavbarProps {
 }
 
 export function Navbar({ user: userProp }: NavbarProps) {
-  const { logout, isAuthenticated, user, userId } = useAuth()
+  const { logout, isAuthenticated } = useAuth()
 
   const handleLogout = async () => {
     await logout()
   }
-
-  // WORKAROUND: Check user/userId instead of isAuthenticated since WebSocket auth is broken
-  // The workaround provides user/userId even when isAuthenticated is false
-  const isUserAuthenticated = isAuthenticated || user || userId
 
   return (
     <nav className="bg-white shadow-sm border-b">
@@ -45,7 +41,7 @@ export function Navbar({ user: userProp }: NavbarProps) {
               <span>Start Analysis</span>
             </Link>
             
-            {isUserAuthenticated ? (
+            {isAuthenticated ? (
               <>
                 <Link
                   to="/dashboard"
