@@ -2,6 +2,14 @@ import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
 
+// Custom error class for rate limiting
+class RateLimitError extends Error {
+  constructor(message: string, public code: string = "RATE_LIMIT_EXCEEDED") {
+    super(message);
+    this.name = "RateLimitError";
+  }
+}
+
 // Token bucket configuration for experiment rate limiting
 // Each tier has a maximum allotment and a refill rate (experiments per day)
 // Tiers must match schema.ts: free, premium, professional
@@ -189,226 +197,266 @@ export const createExperiment = mutation({
     message: v.string(),
   }),
   handler: async (ctx, args) => {
-    const callId = Math.random().toString(36).substring(2, 15)
-    const timestamp = new Date().toISOString()
-    
-    // console.log(`🔧 [${callId}] createExperiment called at ${timestamp}`)
-    // console.log(`🔧 [${callId}] Args:`, {
-    //   pictureId: args.pictureId,
-    //   userId: args.userId,
-    //   experimentType: args.experimentType,
-    //   parameters: args.parameters
-    // })
-    
-    // Check for existing experiments for this picture
-    const existingExperiments = await ctx.db
-      .query("experiments")
-      .withIndex("by_picture", (q) => q.eq("pictureId", args.pictureId))
-      .collect();
-    
-    // console.log(`🔍 [${callId}] Found ${existingExperiments.length} existing experiments for this picture`)
-    // if (existingExperiments.length > 0) {
-    //   console.log(`🔍 [${callId}] Existing experiments:`, existingExperiments.map(exp => ({
-    //     id: exp._id,
-    //     type: exp.experimentType,
-    //     status: exp.status,
-    //     createdAt: new Date(exp.createdAt).toISOString()
-    //   })))
-    // }
-    
-    // Check if picture exists and user has access
-    const picture = await ctx.db.get(args.pictureId);
-    if (!picture) {
-      // console.log(`❌ [${callId}] Picture not found:`, args.pictureId)
-      throw new Error("Picture not found");
-    }
-
-    if (picture.isExpired) {
-      throw new Error("Picture has expired");
-    }
-
-    // Check ownership for registered users
-    if (args.userId && picture.userId !== args.userId) {
-      throw new Error("Not authorized to create experiments on this picture");
-    }
-
-    // Check membership limits for registered users using token bucket algorithm
-    if (args.userId) {
-      const user = await ctx.db.get(args.userId);
-      if (!user) {
-        throw new Error("User not found");
-      }
-
-      // Get tier configuration (default to free if tier not found)
-      const tierConfig = TIER_CONFIG[user.membershipTier as keyof typeof TIER_CONFIG] || TIER_CONFIG.free;
+    try {
+      const callId = Math.random().toString(36).substring(2, 15)
+      const timestamp = new Date().toISOString()
       
-      // Calculate current allotment with refill based on time since last experiment
-      // Handle existing users who don't have experimentAllotment yet
-      const currentStoredAllotment = user.experimentAllotment ?? tierConfig.maxAllotment;
-      const refilledAllotment = calculateRefilledAllotment(
-        currentStoredAllotment,
-        user.lastExperimentAt,
-        tierConfig
-      );
-
-      // console.log(`🎯 [${callId}] Allotment check:`, {
-      //   tier: user.membershipTier,
-      //   storedAllotment: currentStoredAllotment,
-      //   lastExperimentAt: user.lastExperimentAt ? new Date(user.lastExperimentAt).toISOString() : 'never',
-      //   refilledAllotment: refilledAllotment.toFixed(2),
-      //   maxAllotment: tierConfig.maxAllotment,
-      //   refillPerDay: tierConfig.refillPerDay,
-      // });
-
-      // Check if user has enough allotment (need at least 1)
-      if (refilledAllotment < 1) {
-        const hoursUntilNextExperiment = ((1 - refilledAllotment) / tierConfig.refillPerDay) * 24;
-        throw new Error(
-          `Experiment limit reached. You'll have another experiment available in about ${Math.ceil(hoursUntilNextExperiment)} hour(s). ` +
-          `Upgrade your plan for more experiments!`
-        );
+      console.log(`🔧 [${callId}] createExperiment called at ${timestamp}`)
+      console.log(`🔧 [${callId}] Args:`, JSON.stringify({
+        pictureId: args.pictureId,
+        userId: args.userId,
+        ipAddress: args.ipAddress ? '***' : undefined,
+        experimentType: args.experimentType,
+        parameters: args.parameters
+      }))
+      
+      // Validate required arguments
+      if (!args.pictureId) {
+        throw new Error("pictureId is required");
       }
-    }
-
-    // Check limits for anonymous/unregistered users (tracked by IP)
-    // Limit applies per image, not per experiment - once an image is uploaded and used
-    // (first experiment run), users can run all experiments on that image without additional limits
-    let anonymousLimitRecord = null;
-    let anonymousRefilledAllotment = ANONYMOUS_CONFIG.maxAllotment;
-    let pictureHasBeenUsed = false;
-    
-    if (!args.userId && args.ipAddress) {
-      // Check if this picture has already been "used" for the limit
-      // A picture is "used" if it was uploaded by this IP and has at least one experiment
+      if (!args.experimentType) {
+        throw new Error("experimentType is required");
+      }
+      
+      // Check for existing experiments for this picture
+      const existingExperiments = await ctx.db
+        .query("experiments")
+        .withIndex("by_picture", (q) => q.eq("pictureId", args.pictureId))
+        .collect();
+      
+      // Check if picture exists and user has access
       const picture = await ctx.db.get(args.pictureId);
+      if (!picture) {
+        // console.log(`❌ [${callId}] Picture not found:`, args.pictureId)
+        throw new Error("Picture not found");
+      }
+
+      if (picture.isExpired) {
+        throw new Error("Picture has expired");
+      }
+
+      // Check ownership for registered users
+      if (args.userId && picture.userId !== args.userId) {
+        throw new Error("Not authorized to create experiments on this picture");
+      }
+
+      // Check if this picture already has experiments (has been "used")
+      // Limit applies per picture, not per experiment - once a picture has been used (has experiments),
+      // users can run all experiments on that picture without additional limits
       const existingExperimentsForPicture = await ctx.db
         .query("experiments")
         .withIndex("by_picture", (q) => q.eq("pictureId", args.pictureId))
         .collect();
       
-      // Picture is "used" if:
-      // 1. It was uploaded by this IP (ownership check)
-      // 2. It already has experiments (meaning the first experiment already ran)
-      if (picture && picture.ipAddress === args.ipAddress && existingExperimentsForPicture.length > 0) {
-        // This picture was uploaded by this IP and already has experiments - it's been "used"
-        // This means the first experiment already counted toward the limit, so don't count this one
-        pictureHasBeenUsed = true;
-      }
-      // If picture has no experiments yet, this will be the first one, so it counts toward the limit
+      // Picture is "used" if it already has experiments
+      // This means the first experiment already counted toward the limit
+      const pictureHasBeenUsed = existingExperimentsForPicture.length > 0;
+      
+      // Check membership limits for registered users using token bucket algorithm
+      if (args.userId) {
+        
+        // Only check limit if this picture hasn't been used yet
+        if (!pictureHasBeenUsed) {
+          const user = await ctx.db.get(args.userId);
+          if (!user) {
+            throw new Error("User not found");
+          }
 
-      // Only check limit if this picture hasn't been used yet
-      if (!pictureHasBeenUsed) {
-        // Look up existing limit record for this IP
-        anonymousLimitRecord = await ctx.db
-          .query("anonymousExperimentLimits")
-          .withIndex("by_ip", (q) => q.eq("ipAddress", args.ipAddress!))
-          .first();
-
-        if (anonymousLimitRecord) {
-          // Calculate refilled allotment based on time since last image was used
-          anonymousRefilledAllotment = calculateRefilledAllotment(
-            anonymousLimitRecord.experimentAllotment,
-            anonymousLimitRecord.lastExperimentAt,
-            ANONYMOUS_CONFIG
+          // Get tier configuration (default to free if tier not found)
+          const tierConfig = TIER_CONFIG[user.membershipTier as keyof typeof TIER_CONFIG] || TIER_CONFIG.free;
+          
+          // Calculate current allotment with refill based on time since last experiment
+          // Handle existing users who don't have experimentAllotment yet
+          const currentStoredAllotment = user.experimentAllotment ?? tierConfig.maxAllotment;
+          const refilledAllotment = calculateRefilledAllotment(
+            currentStoredAllotment,
+            user.lastExperimentAt,
+            tierConfig
           );
-        }
-        // If no record exists, user gets full allotment (handled by default value above)
 
-        // console.log(`🎯 [${callId}] Anonymous allotment check:`, {
+          // console.log(`🎯 [${callId}] Allotment check:`, {
+          //   tier: user.membershipTier,
+          //   storedAllotment: currentStoredAllotment,
+          //   lastExperimentAt: user.lastExperimentAt ? new Date(user.lastExperimentAt).toISOString() : 'never',
+          //   refilledAllotment: refilledAllotment.toFixed(2),
+          //   maxAllotment: tierConfig.maxAllotment,
+          //   refillPerDay: tierConfig.refillPerDay,
+          // });
+
+          // Check if user has enough allotment (need at least 1)
+          if (refilledAllotment < 1) {
+            const hoursUntilNextExperiment = ((1 - refilledAllotment) / tierConfig.refillPerDay) * 24;
+            throw new RateLimitError(
+              `Experiment limit reached. You'll have another experiment available in about ${Math.ceil(hoursUntilNextExperiment)} hour(s). ` +
+              `Upgrade your plan for more experiments!`
+            );
+          }
+        }
+      }
+
+      // Check limits for anonymous/unregistered users (tracked by IP)
+      // Limit applies per image, not per experiment - once an image is uploaded and used
+      // (first experiment run), users can run all experiments on that image without additional limits
+      let anonymousLimitRecord = null;
+      let anonymousRefilledAllotment = ANONYMOUS_CONFIG.maxAllotment;
+      let anonymousPictureHasBeenUsed = false;
+      
+      if (!args.userId && args.ipAddress) {
+        // For anonymous users, picture is "used" if:
+        // 1. It was uploaded by this IP (ownership check)
+        // 2. It already has experiments (meaning the first experiment already ran)
+        if (picture && picture.ipAddress === args.ipAddress && existingExperimentsForPicture.length > 0) {
+          // This picture was uploaded by this IP and already has experiments - it's been "used"
+          // This means the first experiment already counted toward the limit, so don't count this one
+          anonymousPictureHasBeenUsed = true;
+        }
+        // If picture has no experiments yet, this will be the first one, so it counts toward the limit
+
+        // Only check limit if this picture hasn't been used yet
+        if (!anonymousPictureHasBeenUsed) {
+          // Look up existing limit record for this IP
+          anonymousLimitRecord = await ctx.db
+            .query("anonymousExperimentLimits")
+            .withIndex("by_ip", (q) => q.eq("ipAddress", args.ipAddress!))
+            .first();
+
+          if (anonymousLimitRecord) {
+            // Calculate refilled allotment based on time since last image was used
+            anonymousRefilledAllotment = calculateRefilledAllotment(
+              anonymousLimitRecord.experimentAllotment,
+              anonymousLimitRecord.lastExperimentAt,
+              ANONYMOUS_CONFIG
+            );
+          }
+          // If no record exists, user gets full allotment (handled by default value above)
+
+          // console.log(`🎯 [${callId}] Anonymous allotment check:`, {
+          //   ipAddress: args.ipAddress,
+          //   hasExistingRecord: !!anonymousLimitRecord,
+          //   refilledAllotment: anonymousRefilledAllotment.toFixed(2),
+          //   maxAllotment: ANONYMOUS_CONFIG.maxAllotment,
+          //   refillPerDay: ANONYMOUS_CONFIG.refillPerDay,
+          //   pictureHasBeenUsed,
+          // });
+
+          // Check if anonymous user has enough allotment for a new image
+          if (anonymousRefilledAllotment < 1) {
+            const daysUntilNextImage = (1 - anonymousRefilledAllotment) / ANONYMOUS_CONFIG.refillPerDay;
+            throw new RateLimitError(
+              `You've reached the limit for unregistered users (5 images per month). ` +
+              `You'll be able to analyze another image in about ${Math.ceil(daysUntilNextImage)} day(s). ` +
+              `Register for free to get 3 images per week!`
+            );
+          }
+        }
+      }
+
+      // console.log(`📝 [${callId}] Inserting experiment into database...`)
+      const experimentId = await ctx.db.insert("experiments", {
+        pictureId: args.pictureId,
+        userId: args.userId,
+        experimentType: args.experimentType,
+        parameters: args.parameters,
+        status: "pending",
+        createdAt: Date.now(),
+      });
+      
+      // console.log(`✅ [${callId}] Experiment inserted with ID:`, experimentId)
+
+      // Update user's experiment count and allotment
+      // Only decrement allotment if this picture hasn't been used yet (first experiment on this picture)
+      if (args.userId) {
+        const user = await ctx.db.get(args.userId);
+        if (user) {
+          // Always increment lifetime count (for analytics)
+          const currentExperimentCount = (user.experimentCount ?? 0) + 1;
+          
+          // Only decrement allotment if this is the first experiment on this picture
+          if (!pictureHasBeenUsed) {
+            // Get tier configuration
+            const tierConfig = TIER_CONFIG[user.membershipTier as keyof typeof TIER_CONFIG] || TIER_CONFIG.free;
+            
+            // Recalculate refilled allotment and subtract 1 for this experiment
+            const currentStoredAllotment = user.experimentAllotment ?? tierConfig.maxAllotment;
+            const refilledAllotment = calculateRefilledAllotment(
+              currentStoredAllotment,
+              user.lastExperimentAt,
+              tierConfig
+            );
+            const newAllotment = Math.max(0, refilledAllotment - 1);
+
+            // console.log(`📊 [${callId}] Updating user allotment:`, {
+            //   previousStored: currentStoredAllotment,
+            //   afterRefill: refilledAllotment.toFixed(2),
+            //   afterDeduction: newAllotment.toFixed(2),
+            // });
+
+            await ctx.db.patch(args.userId, {
+              experimentCount: currentExperimentCount,
+              experimentAllotment: newAllotment,
+              lastExperimentAt: Date.now(),
+            });
+          } else {
+            // Picture already used - just update the count, don't decrement allotment
+            await ctx.db.patch(args.userId, {
+              experimentCount: currentExperimentCount,
+            });
+          }
+        }
+      }
+
+      // Update anonymous user's allotment (tracked by IP)
+      // Only decrement if this picture hasn't been used yet (first experiment on this picture)
+      if (!args.userId && args.ipAddress && !anonymousPictureHasBeenUsed) {
+        const newAllotment = Math.max(0, anonymousRefilledAllotment - 1);
+
+        // console.log(`📊 [${callId}] Updating anonymous allotment:`, {
         //   ipAddress: args.ipAddress,
-        //   hasExistingRecord: !!anonymousLimitRecord,
-        //   refilledAllotment: anonymousRefilledAllotment.toFixed(2),
-        //   maxAllotment: ANONYMOUS_CONFIG.maxAllotment,
-        //   refillPerDay: ANONYMOUS_CONFIG.refillPerDay,
+        //   afterRefill: anonymousRefilledAllotment.toFixed(2),
+        //   afterDeduction: newAllotment.toFixed(2),
         //   pictureHasBeenUsed,
         // });
 
-        // Check if anonymous user has enough allotment for a new image
-        if (anonymousRefilledAllotment < 1) {
-          const daysUntilNextImage = (1 - anonymousRefilledAllotment) / ANONYMOUS_CONFIG.refillPerDay;
-          throw new Error(
-            `You've reached the limit for unregistered users (5 images per month). ` +
-            `You'll be able to analyze another image in about ${Math.ceil(daysUntilNextImage)} day(s). ` +
-            `Register for free to get 3 images per week!`
-          );
+        if (anonymousLimitRecord) {
+          // Update existing record
+          await ctx.db.patch(anonymousLimitRecord._id, {
+            experimentAllotment: newAllotment,
+            lastExperimentAt: Date.now(),
+          });
+        } else {
+          // Create new record for this IP
+          await ctx.db.insert("anonymousExperimentLimits", {
+            ipAddress: args.ipAddress,
+            experimentAllotment: newAllotment,
+            lastExperimentAt: Date.now(),
+          });
         }
       }
-    }
 
-    // console.log(`📝 [${callId}] Inserting experiment into database...`)
-    const experimentId = await ctx.db.insert("experiments", {
-      pictureId: args.pictureId,
-      userId: args.userId,
-      experimentType: args.experimentType,
-      parameters: args.parameters,
-      status: "pending",
-      createdAt: Date.now(),
-    });
-    
-    // console.log(`✅ [${callId}] Experiment inserted with ID:`, experimentId)
-
-    // Update user's experiment count and allotment
-    if (args.userId) {
-      const user = await ctx.db.get(args.userId);
-      if (user) {
-        // Get tier configuration
-        const tierConfig = TIER_CONFIG[user.membershipTier as keyof typeof TIER_CONFIG] || TIER_CONFIG.free;
-        
-        // Recalculate refilled allotment and subtract 1 for this experiment
-        const currentStoredAllotment = user.experimentAllotment ?? tierConfig.maxAllotment;
-        const refilledAllotment = calculateRefilledAllotment(
-          currentStoredAllotment,
-          user.lastExperimentAt,
-          tierConfig
-        );
-        const newAllotment = Math.max(0, refilledAllotment - 1);
-
-        // console.log(`📊 [${callId}] Updating user allotment:`, {
-        //   previousStored: currentStoredAllotment,
-        //   afterRefill: refilledAllotment.toFixed(2),
-        //   afterDeduction: newAllotment.toFixed(2),
-        // });
-
-        await ctx.db.patch(args.userId, {
-          experimentCount: (user.experimentCount ?? 0) + 1, // Lifetime count (for analytics)
-          experimentAllotment: newAllotment,
-          lastExperimentAt: Date.now(),
-        });
+      return {
+        experimentId,
+        message: "Experiment created successfully",
+      };
+    } catch (error: any) {
+      console.error("❌ Error in createExperiment:", {
+        message: error?.message,
+        name: error?.name,
+        code: error?.code,
+        stack: error?.stack,
+        error: error
+      });
+      
+      // If it's a RateLimitError, preserve it
+      if (error instanceof RateLimitError || error?.code === "RATE_LIMIT_EXCEEDED") {
+        throw error; // Re-throw as-is to preserve the error code
       }
+      
+      // For other errors, wrap with more context
+      const errorMessage = error?.message || error?.toString() || 'Unknown error';
+      throw new Error(
+        `Failed to create experiment: ${errorMessage}`
+      );
     }
-
-    // Update anonymous user's allotment (tracked by IP)
-    // Only decrement if this picture hasn't been used yet (first experiment on this picture)
-    if (!args.userId && args.ipAddress && !pictureHasBeenUsed) {
-      const newAllotment = Math.max(0, anonymousRefilledAllotment - 1);
-
-      // console.log(`📊 [${callId}] Updating anonymous allotment:`, {
-      //   ipAddress: args.ipAddress,
-      //   afterRefill: anonymousRefilledAllotment.toFixed(2),
-      //   afterDeduction: newAllotment.toFixed(2),
-      //   pictureHasBeenUsed,
-      // });
-
-      if (anonymousLimitRecord) {
-        // Update existing record
-        await ctx.db.patch(anonymousLimitRecord._id, {
-          experimentAllotment: newAllotment,
-          lastExperimentAt: Date.now(),
-        });
-      } else {
-        // Create new record for this IP
-        await ctx.db.insert("anonymousExperimentLimits", {
-          ipAddress: args.ipAddress,
-          experimentAllotment: newAllotment,
-          lastExperimentAt: Date.now(),
-        });
-      }
-    }
-
-    return {
-      experimentId,
-      message: "Experiment created successfully",
-    };
   },
 });
 

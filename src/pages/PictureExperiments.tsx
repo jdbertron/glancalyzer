@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useQuery, useMutation } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { useSearchParams, useNavigate } from 'react-router-dom'
@@ -45,6 +45,10 @@ export function PictureExperiments() {
   // Processing states
   const [processingValueStudy, setProcessingValueStudy] = useState(false)
   const [processingEdgeDetection, setProcessingEdgeDetection] = useState(false)
+  
+  // Refs to prevent infinite retries on error
+  const hasAttemptedAutoValueStudy = useRef(false)
+  const hasAttemptedAutoEdgeDetection = useRef(false)
   
   // Client IP for anonymous users
   const [clientIP, setClientIP] = useState<string | null>(null)
@@ -94,7 +98,7 @@ export function PictureExperiments() {
   const generateUploadUrl = useMutation(api.pictures.generateUploadUrl)
   
   // Helper function to convert data URL to Blob and upload to Convex Storage
-  const uploadDataUrlToStorage = async (dataUrl: string, fileName: string): Promise<string> => {
+  const uploadDataUrlToStorage = useCallback(async (dataUrl: string, fileName: string): Promise<string> => {
     try {
       // Convert data URL to Blob
       const response = await fetch(dataUrl)
@@ -128,7 +132,7 @@ export function PictureExperiments() {
       console.error('Error uploading to storage:', error)
       throw new Error(`Failed to upload image to storage: ${error.message || 'Unknown error'}`)
     }
-  }
+  }, [generateUploadUrl])
   
   // State to store converted results (storageId -> dataUrl)
   const [convertedResults, setConvertedResults] = useState<{
@@ -328,6 +332,33 @@ export function PictureExperiments() {
     }
   }, [latestValueStudy, latestEdgeDetection, expandedPanels.valueStudy, expandedPanels.edgeDetection])
 
+  // Reset attempt refs when panels close or results become available
+  useEffect(() => {
+    if (!expandedPanels.valueStudy) {
+      hasAttemptedAutoValueStudy.current = false
+    }
+    if (latestValueStudy) {
+      hasAttemptedAutoValueStudy.current = false
+      // Clear processing state when results become available
+      if (processingValueStudy) {
+        setProcessingValueStudy(false)
+      }
+    }
+  }, [expandedPanels.valueStudy, latestValueStudy, processingValueStudy])
+  
+  useEffect(() => {
+    if (!expandedPanels.edgeDetection) {
+      hasAttemptedAutoEdgeDetection.current = false
+    }
+    if (latestEdgeDetection) {
+      hasAttemptedAutoEdgeDetection.current = false
+      // Clear processing state when results become available
+      if (processingEdgeDetection) {
+        setProcessingEdgeDetection(false)
+      }
+    }
+  }, [expandedPanels.edgeDetection, latestEdgeDetection, processingEdgeDetection])
+
   // Auto-run Value Study when panel opens if no results exist
   useEffect(() => {
     if (
@@ -336,8 +367,12 @@ export function PictureExperiments() {
       imageUrl &&
       pictureId &&
       !processingValueStudy &&
+      !hasAttemptedAutoValueStudy.current &&
       (userId || (!ipFetching && clientIP))
     ) {
+      // Mark that we've attempted to prevent infinite retries
+      hasAttemptedAutoValueStudy.current = true
+      
       // Auto-run Value Study
       const runAutoValueStudy = async () => {
         setProcessingValueStudy(true)
@@ -383,14 +418,26 @@ export function PictureExperiments() {
           
           if (saveResponse.success) {
             toast.success('Value Study completed!')
+            // Don't clear processing state here - let useEffect clear it when query updates
+            // The query will automatically refresh and show the results
           } else {
             toast.error(saveResponse.message || 'Failed to save Value Study results')
+            setProcessingValueStudy(false)
           }
-          // The query will automatically refresh and show the results
         } catch (error: any) {
           console.error('Value Study error:', error)
-          toast.error(error.message || 'Failed to create Value Study')
-        } finally {
+          const errorMessage = error?.message || 'Failed to create Value Study'
+          // Check if it's a rate limit error by checking error name or code
+          // Primary check: error name/code (should be preserved by Convex)
+          // Fallback: message parsing (only if name/code not available)
+          const isRateLimitError = error?.name === 'RateLimitError' || 
+                                   error?.code === 'RATE_LIMIT_EXCEEDED'
+          // Show user-friendly error message with longer duration for rate limits
+          if (isRateLimitError) {
+            toast.error(errorMessage, { duration: 6000 })
+          } else {
+            toast.error(errorMessage)
+          }
           setProcessingValueStudy(false)
         }
       }
@@ -407,8 +454,12 @@ export function PictureExperiments() {
       imageUrl &&
       pictureId &&
       !processingEdgeDetection &&
+      !hasAttemptedAutoEdgeDetection.current &&
       (userId || (!ipFetching && clientIP))
     ) {
+      // Mark that we've attempted to prevent infinite retries
+      hasAttemptedAutoEdgeDetection.current = true
+      
       // Auto-run Edge Detection
       const runAutoEdgeDetection = async () => {
         setProcessingEdgeDetection(true)
@@ -421,15 +472,15 @@ export function PictureExperiments() {
             experimentType: 'Edge Detection',
             parameters: {
               autoProcessed: true,
-              defaultBlurRadius: 7,
-              defaultThreshold: 30,
+              defaultBlurRadius: 3,
+              defaultThreshold: 3,
             }
           })
           
           // Process image
           const processingResult = await processEdgeDetection(imageUrl, {
-            blurRadius: 7,
-            threshold: 30,
+            blurRadius: 3,
+            threshold: 3,
           })
           
           // Upload processed image to storage
@@ -456,14 +507,25 @@ export function PictureExperiments() {
           
           if (saveResponse.success) {
             toast.success('Edge Detection completed!')
+            // Don't clear processing state here - let useEffect clear it when query updates
+            // The query will automatically refresh and show the results
           } else {
             toast.error(saveResponse.message || 'Failed to save Edge Detection results')
+            setProcessingEdgeDetection(false)
           }
-          // The query will automatically refresh and show the results
         } catch (error: any) {
           console.error('Edge Detection error:', error)
-          toast.error(error.message || 'Failed to create Edge Detection')
-        } finally {
+          const errorMessage = error?.message || 'Failed to create Edge Detection'
+          // Check if it's a rate limit error by checking error name or code
+          // Primary check: error name/code (should be preserved by Convex)
+          const isRateLimitError = error?.name === 'RateLimitError' || 
+                                   error?.code === 'RATE_LIMIT_EXCEEDED'
+          // Show user-friendly error message with longer duration for rate limits
+          if (isRateLimitError) {
+            toast.error(errorMessage, { duration: 6000 })
+          } else {
+            toast.error(errorMessage)
+          }
           setProcessingEdgeDetection(false)
         }
       }
@@ -981,6 +1043,11 @@ export function PictureExperiments() {
                       }}
                     />
                   )
+                ) : processingValueStudy ? (
+                  <div className="text-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto mb-2"></div>
+                    <p className="text-gray-600">Processing Value Study...</p>
+                  </div>
                 ) : (
                   <div className="text-center py-8">
                     <Palette className="h-12 w-12 text-gray-400 mx-auto mb-4" />
@@ -1104,9 +1171,32 @@ export function PictureExperiments() {
             {expandedPanels.edgeDetection && (
               <div className="card-content">
                 {latestEdgeDetection && imageUrl && latestEdgeDetection.results ? (
-                  <EdgeDetectionResults
-                    originalImageUrl={imageUrl}
-                    initialResults={(convertedResults.edgeDetection || latestEdgeDetection.results) as any}
+                  // Check if we have a storage ID that needs conversion but don't have converted data URL yet
+                  (latestEdgeDetection.results.processedImageStorageId && 
+                   !convertedResults.edgeDetection?.processedImageDataUrl && 
+                   !latestEdgeDetection.results.processedImageDataUrl) ? (
+                    <div className="text-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto mb-2"></div>
+                      <p className="text-gray-600">Loading Edge Detection results...</p>
+                    </div>
+                  ) : (
+                    <EdgeDetectionResults
+                      originalImageUrl={imageUrl}
+                      initialResults={(() => {
+                        // Prefer converted results if available (has data URL)
+                        const converted = convertedResults.edgeDetection
+                        if (converted && converted.processedImageDataUrl) {
+                          return converted as any
+                        }
+                        // If we have raw results with data URL (old format), use them
+                        if (latestEdgeDetection.results.processedImageDataUrl) {
+                          return latestEdgeDetection.results as any
+                        }
+                        // If we have storage ID but no conversion yet, we should have shown loading above
+                        // But if we get here, try to use the raw results (component might handle it)
+                        console.warn('Edge Detection results have storage ID but no converted data URL - conversion may have failed')
+                        return latestEdgeDetection.results as any
+                      })()}
                     onSave={async (results) => {
                       try {
                         // Validate data URL
@@ -1160,6 +1250,12 @@ export function PictureExperiments() {
                       }
                     }}
                   />
+                  )
+                ) : processingEdgeDetection ? (
+                  <div className="text-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto mb-2"></div>
+                    <p className="text-gray-600">Processing Edge Detection...</p>
+                  </div>
                 ) : (
                   <div className="text-center py-8">
                     <Map className="h-12 w-12 text-gray-400 mx-auto mb-4" />
