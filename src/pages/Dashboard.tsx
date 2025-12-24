@@ -100,6 +100,14 @@ export function Dashboard() {
   )
   const experiments = useQuery(api.experiments.getUserExperiments, userId ? { userId } : 'skip')
 
+  // Calculate unique pictures/studies (for rate limiting display)
+  // 1 picture = 1 study, regardless of how many experiments run on it
+  const uniquePicturesStudied = (() => {
+    if (!experiments || experiments.length === 0) return 0
+    const uniquePictureIds = new Set(experiments.map(exp => exp.pictureId))
+    return uniquePictureIds.size
+  })()
+
   // If authenticated but user is null, try to initialize profile
   useEffect(() => {
     if ((isAuthenticated || userId) && userId && user === null) {
@@ -286,8 +294,9 @@ export function Dashboard() {
               <div className="flex items-center">
                 <BarChart3 className="h-8 w-8 text-green-600" />
                 <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-500">Experiments</p>
-                  <p className="text-2xl font-bold text-gray-900">{experiments.length}</p>
+                  <p className="text-sm font-medium text-gray-500">Studies</p>
+                  <p className="text-2xl font-bold text-gray-900">{uniquePicturesStudied}</p>
+                  <p className="text-xs text-gray-400 mt-1">{experiments.length} total analysis{experiments.length !== 1 ? 'es' : ''}</p>
                 </div>
               </div>
             </div>
@@ -309,18 +318,18 @@ export function Dashboard() {
         {/* Recent Experiments */}
         <div className="card">
           <div className="card-header">
-            <h2 className="card-title">Recent Experiments</h2>
-            <p className="card-description">Your latest AI analysis results</p>
+            <h2 className="card-title">Recent Analyses</h2>
+            <p className="card-description">Your latest experiment results</p>
           </div>
           <div className="card-content">
             {recentExperiments.length === 0 ? (
               <div className="text-center py-8">
                 <BarChart3 className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  No experiments yet
+                  No studies yet
                 </h3>
                 <p className="text-gray-600 mb-4">
-                  Upload an image and run your first experiment
+                  Upload an image to start your first study
                 </p>
                 <Link to="/upload" className="btn btn-primary">
                   Upload Image

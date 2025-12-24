@@ -82,7 +82,7 @@ export function PictureCard({ picture, onAnalyzeFocus, onValueStudy, onEdgeDetec
             onClick={() => navigate(`/picture-experiments?pictureId=${picture._id}`)}
           />
           <div className="absolute top-2 right-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
-            {picture.experimentCount} experiment{picture.experimentCount !== 1 ? 's' : ''}
+            {picture.experimentCount} analysis{picture.experimentCount !== 1 ? 'es' : ''}
           </div>
         </div>
 

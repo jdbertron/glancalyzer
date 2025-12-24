@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useQuery, useMutation } from 'convex/react'
+import { useQuery, useMutation, useAction } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { 
@@ -14,7 +14,8 @@ import {
   Trash2,
   ExternalLink,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Sparkles
 } from 'lucide-react'
 import { LoadingSpinner } from '../components/LoadingSpinner'
 import { ValueStudyResults } from '../components/ValueStudyResults'
@@ -22,6 +23,7 @@ import { EdgeDetectionResults } from '../components/EdgeDetectionResults'
 import { DEBUG_CONFIG } from '../config/debug'
 import { analyzeComposition, formatCompositionName } from '../utils/compositionAnalysis'
 import { processValueStudy, processEdgeDetection } from '../utils/imageProcessing'
+import { extractCLIPFeaturesFromUrl } from '../utils/clipFeatures'
 import { useAuth } from '../hooks/useAuth'
 import toast from 'react-hot-toast'
 
@@ -45,10 +47,19 @@ export function PictureExperiments() {
   // Processing states
   const [processingValueStudy, setProcessingValueStudy] = useState(false)
   const [processingEdgeDetection, setProcessingEdgeDetection] = useState(false)
+  const [classifyingComposition, setClassifyingComposition] = useState(false)
+  
+  // Track experiment IDs that were just created (to wait for query refresh)
+  const [pendingValueStudyId, setPendingValueStudyId] = useState<string | null>(null)
+  const [pendingEdgeDetectionId, setPendingEdgeDetectionId] = useState<string | null>(null)
   
   // Refs to prevent infinite retries on error
   const hasAttemptedAutoValueStudy = useRef(false)
   const hasAttemptedAutoEdgeDetection = useRef(false)
+  
+  // Refs to track if we've already auto-expanded panels (so manual collapse works)
+  const hasAutoExpandedValueStudy = useRef(false)
+  const hasAutoExpandedEdgeDetection = useRef(false)
   
   // Client IP for anonymous users
   const [clientIP, setClientIP] = useState<string | null>(null)
@@ -96,6 +107,7 @@ export function PictureExperiments() {
   const updateValueStudyResults = useMutation(api.experiments.updateValueStudyResults)
   const updateEdgeDetectionResults = useMutation(api.experiments.updateEdgeDetectionResults)
   const generateUploadUrl = useMutation(api.pictures.generateUploadUrl)
+  const classifyImageFeatures = useAction(api.imageClassification.classifyImageFeatures)
   
   // Helper function to convert data URL to Blob and upload to Convex Storage
   const uploadDataUrlToStorage = useCallback(async (dataUrl: string, fileName: string): Promise<string> => {
@@ -322,42 +334,85 @@ export function PictureExperiments() {
     }
   }, [valueStudyImageUrl, edgeDetectionImageUrl, latestValueStudy, latestEdgeDetection, convertedResults.valueStudy?.processedImageStorageId, convertedResults.edgeDetection?.processedImageStorageId])
 
-  // Auto-expand panels that have results
+  // Reset auto-expand refs when picture changes
   useEffect(() => {
-    if (latestValueStudy && !expandedPanels.valueStudy) {
+    hasAutoExpandedValueStudy.current = false
+    hasAutoExpandedEdgeDetection.current = false
+  }, [pictureId])
+
+  // Auto-expand panels that have results (only once when results first appear)
+  useEffect(() => {
+    if (latestValueStudy && !hasAutoExpandedValueStudy.current) {
+      hasAutoExpandedValueStudy.current = true
       setExpandedPanels(prev => ({ ...prev, valueStudy: true }))
     }
-    if (latestEdgeDetection && !expandedPanels.edgeDetection) {
+    if (latestEdgeDetection && !hasAutoExpandedEdgeDetection.current) {
+      hasAutoExpandedEdgeDetection.current = true
       setExpandedPanels(prev => ({ ...prev, edgeDetection: true }))
     }
-  }, [latestValueStudy, latestEdgeDetection, expandedPanels.valueStudy, expandedPanels.edgeDetection])
+  }, [latestValueStudy, latestEdgeDetection])
 
   // Reset attempt refs when panels close or results become available
   useEffect(() => {
     if (!expandedPanels.valueStudy) {
       hasAttemptedAutoValueStudy.current = false
+      setPendingValueStudyId(null)
     }
     if (latestValueStudy) {
       hasAttemptedAutoValueStudy.current = false
       // Clear processing state when results become available
       if (processingValueStudy) {
         setProcessingValueStudy(false)
+        setPendingValueStudyId(null)
+      }
+      // Also clear if this is the pending experiment
+      if (pendingValueStudyId && latestValueStudy._id === pendingValueStudyId) {
+        setProcessingValueStudy(false)
+        setPendingValueStudyId(null)
       }
     }
-  }, [expandedPanels.valueStudy, latestValueStudy, processingValueStudy])
+  }, [expandedPanels.valueStudy, latestValueStudy, processingValueStudy, pendingValueStudyId])
   
   useEffect(() => {
     if (!expandedPanels.edgeDetection) {
       hasAttemptedAutoEdgeDetection.current = false
+      setPendingEdgeDetectionId(null)
     }
     if (latestEdgeDetection) {
       hasAttemptedAutoEdgeDetection.current = false
       // Clear processing state when results become available
       if (processingEdgeDetection) {
         setProcessingEdgeDetection(false)
+        setPendingEdgeDetectionId(null)
+      }
+      // Also clear if this is the pending experiment
+      if (pendingEdgeDetectionId && latestEdgeDetection._id === pendingEdgeDetectionId) {
+        setProcessingEdgeDetection(false)
+        setPendingEdgeDetectionId(null)
       }
     }
-  }, [expandedPanels.edgeDetection, latestEdgeDetection, processingEdgeDetection])
+  }, [expandedPanels.edgeDetection, latestEdgeDetection, processingEdgeDetection, pendingEdgeDetectionId])
+  
+  // Also check if pending experiments appear in the full experiments list (in case latestEdgeDetection/latestValueStudy haven't updated yet)
+  useEffect(() => {
+    if (pendingValueStudyId && experiments) {
+      const foundExperiment = experiments.find(exp => exp._id === pendingValueStudyId && exp.status === 'completed')
+      if (foundExperiment) {
+        setProcessingValueStudy(false)
+        setPendingValueStudyId(null)
+      }
+    }
+  }, [experiments, pendingValueStudyId])
+  
+  useEffect(() => {
+    if (pendingEdgeDetectionId && experiments) {
+      const foundExperiment = experiments.find(exp => exp._id === pendingEdgeDetectionId && exp.status === 'completed')
+      if (foundExperiment) {
+        setProcessingEdgeDetection(false)
+        setPendingEdgeDetectionId(null)
+      }
+    }
+  }, [experiments, pendingEdgeDetectionId])
 
   // Auto-run Value Study when panel opens if no results exist
   useEffect(() => {
@@ -388,6 +443,9 @@ export function PictureExperiments() {
               defaultLevels: 5,
             }
           })
+          
+          // Track this experiment ID to wait for query refresh
+          setPendingValueStudyId(result.experimentId)
           
           // Process image
           const processingResult = await processValueStudy(imageUrl, {
@@ -423,6 +481,7 @@ export function PictureExperiments() {
           } else {
             toast.error(saveResponse.message || 'Failed to save Value Study results')
             setProcessingValueStudy(false)
+            setPendingValueStudyId(null)
           }
         } catch (error: any) {
           console.error('Value Study error:', error)
@@ -439,6 +498,7 @@ export function PictureExperiments() {
             toast.error(errorMessage)
           }
           setProcessingValueStudy(false)
+          setPendingValueStudyId(null)
         }
       }
       
@@ -477,6 +537,9 @@ export function PictureExperiments() {
             }
           })
           
+          // Track this experiment ID to wait for query refresh
+          setPendingEdgeDetectionId(result.experimentId)
+          
           // Process image
           const processingResult = await processEdgeDetection(imageUrl, {
             blurRadius: 3,
@@ -512,6 +575,7 @@ export function PictureExperiments() {
           } else {
             toast.error(saveResponse.message || 'Failed to save Edge Detection results')
             setProcessingEdgeDetection(false)
+            setPendingEdgeDetectionId(null)
           }
         } catch (error: any) {
           console.error('Edge Detection error:', error)
@@ -527,6 +591,7 @@ export function PictureExperiments() {
             toast.error(errorMessage)
           }
           setProcessingEdgeDetection(false)
+          setPendingEdgeDetectionId(null)
         }
       }
       
@@ -593,6 +658,56 @@ export function PictureExperiments() {
 
   const togglePanel = (panel: 'eyeTracking' | 'valueStudy' | 'edgeDetection') => {
     setExpandedPanels(prev => ({ ...prev, [panel]: !prev[panel] }))
+  }
+
+  const handleClassifyComposition = async () => {
+    if (!pictureId || !imageUrl || classifyingComposition) return
+    
+    try {
+      setClassifyingComposition(true)
+      toast.loading('Extracting image features...', { id: 'classify' })
+      
+      let clipFeatures: Float32Array
+      try {
+        clipFeatures = await extractCLIPFeaturesFromUrl(imageUrl)
+      } catch (clipError) {
+        toast.error(
+          'Unable to analyze image composition. Please check your internet connection and try again.',
+          { id: 'classify', duration: 4000 }
+        )
+        console.error('CLIP extraction error:', clipError)
+        return
+      }
+      
+      toast.loading('Classifying image...', { id: 'classify' })
+      const classificationResult = await classifyImageFeatures({
+        pictureId: pictureId as any,
+        clipFeatures: Array.from(clipFeatures),
+      })
+      
+      if (classificationResult.success) {
+        // Check if a clear composition was identified
+        const probabilities = classificationResult.probabilities as Record<string, number> | undefined
+        if (probabilities) {
+          const entries = Object.entries(probabilities).sort((a, b) => b[1] - a[1])
+          const topComposition = entries[0]?.[0]
+          if (topComposition === 'no_composition') {
+            toast.success('Analysis completed - no clear composition identified', { id: 'classify' })
+          } else {
+            toast.success('Composition identified!', { id: 'classify' })
+          }
+        } else {
+          toast.success('Composition analysis completed', { id: 'classify' })
+        }
+      } else {
+        toast.error(classificationResult.error || 'Classification failed', { id: 'classify' })
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to classify image', { id: 'classify' })
+      console.error('Classification error:', error)
+    } finally {
+      setClassifyingComposition(false)
+    }
   }
 
   return (
@@ -801,9 +916,30 @@ export function PictureExperiments() {
               </div>
             ) : (
               <div className="mt-6 pt-6 border-t border-gray-200">
-                <div className="flex items-center space-x-2 text-sm text-gray-500">
-                  <Clock className="h-4 w-4" />
-                  <span>Composition classification in progress...</span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2 text-sm text-gray-500">
+                    <Clock className="h-4 w-4" />
+                    <span>Composition classification not yet completed</span>
+                  </div>
+                  {imageUrl && (
+                    <button
+                      onClick={handleClassifyComposition}
+                      disabled={classifyingComposition}
+                      className="btn btn-sm btn-primary flex items-center space-x-2"
+                    >
+                      {classifyingComposition ? (
+                        <>
+                          <LoadingSpinner size="sm" />
+                          <span>Classifying...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="h-4 w-4" />
+                          <span>Classify Composition</span>
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -815,11 +951,13 @@ export function PictureExperiments() {
           {/* Eye Tracking Panel */}
           <div className="card">
             <div 
-              className="card-header cursor-pointer hover:bg-gray-50 transition-colors"
-              onClick={() => togglePanel('eyeTracking')}
+              className="card-header"
             >
               <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
+                <div 
+                  className="flex items-center space-x-3 cursor-pointer hover:opacity-80 transition-opacity flex-1"
+                  onClick={() => togglePanel('eyeTracking')}
+                >
                   <Eye className={`h-5 w-5 ${eyeTrackingExps.length > 0 ? 'text-green-600' : 'text-gray-400'}`} />
                   <div>
                     <h2 className="card-title">Eye Tracking</h2>
@@ -845,11 +983,18 @@ export function PictureExperiments() {
                       Run Experiment
                     </button>
                   )}
-                  {expandedPanels.eyeTracking ? (
-                    <ChevronUp className="h-5 w-5 text-gray-400" />
-                  ) : (
-                    <ChevronDown className="h-5 w-5 text-gray-400" />
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => togglePanel('eyeTracking')}
+                    className="p-1 hover:bg-gray-100 rounded transition-colors"
+                    aria-label={expandedPanels.eyeTracking ? 'Collapse panel' : 'Expand panel'}
+                  >
+                    {expandedPanels.eyeTracking ? (
+                      <ChevronUp className="h-5 w-5 text-gray-400" />
+                    ) : (
+                      <ChevronDown className="h-5 w-5 text-gray-400" />
+                    )}
+                  </button>
                 </div>
               </div>
             </div>
@@ -923,11 +1068,13 @@ export function PictureExperiments() {
           {/* Value Study Panel */}
           <div className="card">
             <div 
-              className="card-header cursor-pointer hover:bg-gray-50 transition-colors"
-              onClick={() => togglePanel('valueStudy')}
+              className="card-header"
             >
               <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
+                <div 
+                  className="flex items-center space-x-3 cursor-pointer hover:opacity-80 transition-opacity flex-1"
+                  onClick={() => togglePanel('valueStudy')}
+                >
                   <Palette className={`h-5 w-5 ${latestValueStudy ? 'text-green-600' : 'text-gray-400'}`} />
                   <div>
                     <h2 className="card-title">Value Study</h2>
@@ -954,11 +1101,18 @@ export function PictureExperiments() {
                       View/Edit
                     </button>
                   )}
-                  {expandedPanels.valueStudy ? (
-                    <ChevronUp className="h-5 w-5 text-gray-400" />
-                  ) : (
-                    <ChevronDown className="h-5 w-5 text-gray-400" />
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => togglePanel('valueStudy')}
+                    className="p-1 hover:bg-gray-100 rounded transition-colors"
+                    aria-label={expandedPanels.valueStudy ? 'Collapse panel' : 'Expand panel'}
+                  >
+                    {expandedPanels.valueStudy ? (
+                      <ChevronUp className="h-5 w-5 text-gray-400" />
+                    ) : (
+                      <ChevronDown className="h-5 w-5 text-gray-400" />
+                    )}
+                  </button>
                 </div>
               </div>
             </div>
@@ -1129,11 +1283,13 @@ export function PictureExperiments() {
           {/* Edge Detection Panel */}
           <div className="card">
             <div 
-              className="card-header cursor-pointer hover:bg-gray-50 transition-colors"
-              onClick={() => togglePanel('edgeDetection')}
+              className="card-header"
             >
               <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
+                <div 
+                  className="flex items-center space-x-3 cursor-pointer hover:opacity-80 transition-opacity flex-1"
+                  onClick={() => togglePanel('edgeDetection')}
+                >
                   <Map className={`h-5 w-5 ${latestEdgeDetection ? 'text-green-600' : 'text-gray-400'}`} />
                   <div>
                     <h2 className="card-title">Edge Detection</h2>
@@ -1160,11 +1316,18 @@ export function PictureExperiments() {
                       View/Edit
                     </button>
                   )}
-                  {expandedPanels.edgeDetection ? (
-                    <ChevronUp className="h-5 w-5 text-gray-400" />
-                  ) : (
-                    <ChevronDown className="h-5 w-5 text-gray-400" />
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => togglePanel('edgeDetection')}
+                    className="p-1 hover:bg-gray-100 rounded transition-colors"
+                    aria-label={expandedPanels.edgeDetection ? 'Collapse panel' : 'Expand panel'}
+                  >
+                    {expandedPanels.edgeDetection ? (
+                      <ChevronUp className="h-5 w-5 text-gray-400" />
+                    ) : (
+                      <ChevronDown className="h-5 w-5 text-gray-400" />
+                    )}
+                  </button>
                 </div>
               </div>
             </div>

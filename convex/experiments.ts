@@ -116,9 +116,9 @@ export const getExperimentAllotmentInfo = query({
       };
 
       const refillRates: Record<string, string> = {
-        free: "3 per week",
-        premium: "100 per month",
-        professional: "500 per month",
+        free: "3 studies per week",
+        premium: "100 studies per month",
+        professional: "500 studies per month",
       };
 
       return {
@@ -164,7 +164,7 @@ export const getExperimentAllotmentInfo = query({
         tier: "anonymous",
         isRegistered: false,
         tierLabel: "Guest",
-        refillRate: "5 images per month",
+        refillRate: "5 studies per month",
       };
     }
 
@@ -174,10 +174,10 @@ export const getExperimentAllotmentInfo = query({
       currentAllotment: ANONYMOUS_CONFIG.maxAllotment,
       maxAllotment: ANONYMOUS_CONFIG.maxAllotment,
       hoursUntilNextExperiment: undefined,
-      tier: "anonymous",
-      isRegistered: false,
-      tierLabel: "Guest",
-      refillRate: "5 images per month",
+        tier: "anonymous",
+        isRegistered: false,
+        tierLabel: "Guest",
+        refillRate: "5 studies per month",
     };
   },
 });
@@ -284,11 +284,12 @@ export const createExperiment = mutation({
           // });
 
           // Check if user has enough allotment (need at least 1)
+          // Rate limiting is per-picture: 1 picture = 1 study
           if (refilledAllotment < 1) {
             const hoursUntilNextExperiment = ((1 - refilledAllotment) / tierConfig.refillPerDay) * 24;
             throw new RateLimitError(
-              `Experiment limit reached. You'll have another experiment available in about ${Math.ceil(hoursUntilNextExperiment)} hour(s). ` +
-              `Upgrade your plan for more experiments!`
+              `Study limit reached. You'll be able to analyze another image in about ${Math.ceil(hoursUntilNextExperiment)} hour(s). ` +
+              `Upgrade your plan for more studies!`
             );
           }
         }
@@ -340,12 +341,13 @@ export const createExperiment = mutation({
           // });
 
           // Check if anonymous user has enough allotment for a new image
+          // Rate limiting is per-picture: 1 picture = 1 study
           if (anonymousRefilledAllotment < 1) {
             const daysUntilNextImage = (1 - anonymousRefilledAllotment) / ANONYMOUS_CONFIG.refillPerDay;
             throw new RateLimitError(
-              `You've reached the limit for unregistered users (5 images per month). ` +
+              `You've reached the limit for unregistered users (5 studies per month). ` +
               `You'll be able to analyze another image in about ${Math.ceil(daysUntilNextImage)} day(s). ` +
-              `Register for free to get 3 images per week!`
+              `Register for free to get 3 studies per week!`
             );
           }
         }
@@ -364,19 +366,21 @@ export const createExperiment = mutation({
       // console.log(`✅ [${callId}] Experiment inserted with ID:`, experimentId)
 
       // Update user's experiment count and allotment
-      // Only decrement allotment if this picture hasn't been used yet (first experiment on this picture)
+      // Rate limiting is per-picture (1 picture = 1 study/experiment for rate limiting)
+      // Only increment experimentCount and decrement allotment if this picture hasn't been used yet (first experiment on this picture)
       if (args.userId) {
         const user = await ctx.db.get(args.userId);
         if (user) {
-          // Always increment lifetime count (for analytics)
-          const currentExperimentCount = (user.experimentCount ?? 0) + 1;
-          
-          // Only decrement allotment if this is the first experiment on this picture
+          // Only increment lifetime count and decrement allotment if this is the first experiment on this picture
+          // This implements "1 picture = 1 study" for rate limiting purposes
           if (!pictureHasBeenUsed) {
             // Get tier configuration
             const tierConfig = TIER_CONFIG[user.membershipTier as keyof typeof TIER_CONFIG] || TIER_CONFIG.free;
             
-            // Recalculate refilled allotment and subtract 1 for this experiment
+            // Increment lifetime count (for analytics) - this represents number of pictures studied
+            const currentExperimentCount = (user.experimentCount ?? 0) + 1;
+            
+            // Recalculate refilled allotment and subtract 1 for this picture/study
             const currentStoredAllotment = user.experimentAllotment ?? tierConfig.maxAllotment;
             const refilledAllotment = calculateRefilledAllotment(
               currentStoredAllotment,
@@ -396,12 +400,8 @@ export const createExperiment = mutation({
               experimentAllotment: newAllotment,
               lastExperimentAt: Date.now(),
             });
-          } else {
-            // Picture already used - just update the count, don't decrement allotment
-            await ctx.db.patch(args.userId, {
-              experimentCount: currentExperimentCount,
-            });
           }
+          // If picture already used, do nothing - user can run unlimited experiments on this picture
         }
       }
 

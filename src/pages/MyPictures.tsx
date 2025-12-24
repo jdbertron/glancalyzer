@@ -83,7 +83,7 @@ export function MyPictures() {
 
     // Confirm deletion
     const confirmMessage = picture.experimentCount > 0
-      ? `Are you sure you want to delete "${picture.fileName}"? This will also delete ${picture.experimentCount} associated experiment${picture.experimentCount !== 1 ? 's' : ''}. This action cannot be undone.`
+      ? `Are you sure you want to delete "${picture.fileName}"? This will also delete ${picture.experimentCount} associated analysis${picture.experimentCount !== 1 ? 'es' : ''}. This action cannot be undone.`
       : `Are you sure you want to delete "${picture.fileName}"? This action cannot be undone.`
 
     if (!window.confirm(confirmMessage)) {

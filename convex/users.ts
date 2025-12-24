@@ -680,3 +680,57 @@ export const getViewerFromSessionId = query({
   },
 });
 
+// Utility mutation to reset a user's study allotment (for testing/admin use)
+// This sets the allotment to the maximum for their tier and clears lastExperimentAt
+export const resetStudyAllotment = mutation({
+  args: {
+    userId: v.optional(v.id("users")), // If not provided, uses current user
+  },
+  returns: v.object({
+    success: v.boolean(),
+    message: v.string(),
+    newAllotment: v.number(),
+    tier: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    // Get user ID - use provided one or current authenticated user
+    let userId = args.userId;
+    if (!userId) {
+      const authUserId = await getAuthUserId(ctx);
+      if (!authUserId) {
+        throw new Error("No user ID provided and no authenticated user found");
+      }
+      userId = authUserId;
+    }
+
+    const user = await ctx.db.get(userId);
+    if (!user) {
+      throw new Error("User not found");
+    }
+
+    // Get tier configuration
+    const TIER_CONFIG = {
+      free: { maxAllotment: 3 },
+      premium: { maxAllotment: 100 },
+      professional: { maxAllotment: 500 },
+    } as const;
+
+    const tier = user.membershipTier || "free";
+    const tierConfig = TIER_CONFIG[tier as keyof typeof TIER_CONFIG] || TIER_CONFIG.free;
+    const maxAllotment = tierConfig.maxAllotment;
+
+    // Reset allotment to max and clear lastExperimentAt
+    await ctx.db.patch(userId, {
+      experimentAllotment: maxAllotment,
+      lastExperimentAt: undefined,
+    });
+
+    return {
+      success: true,
+      message: `Reset study allotment to ${maxAllotment} for ${tier} tier`,
+      newAllotment: maxAllotment,
+      tier: tier,
+    };
+  },
+});
+

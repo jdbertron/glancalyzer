@@ -275,12 +275,12 @@ export function Upload() {
                 {isAtLimit ? (
                   <>
                     <h3 className="font-medium text-amber-800">
-                      You've used all your experiments for now
+                      You've used all your studies for now
                     </h3>
                     <p className="text-sm text-amber-700 mt-1">
-                      Your next experiment will be available in {formatTimeUntil(experimentAllotment.hoursUntilNextExperiment)}.
+                      You'll be able to analyze another image in {formatTimeUntil(experimentAllotment.hoursUntilNextExperiment)}.
                       {!experimentAllotment.isRegistered && (
-                        <> Create a free account to get more experiments!</>
+                        <> Create a free account to get more studies!</>
                       )}
                     </p>
                     {!experimentAllotment.isRegistered && (
@@ -293,7 +293,7 @@ export function Upload() {
                           Sign Up Free
                         </Link>
                         <span className="text-xs text-amber-600 self-center">
-                          Get 3 experiments per week!
+                          Get 3 studies per week!
                         </span>
                       </div>
                     )}
@@ -303,7 +303,7 @@ export function Upload() {
                           to="/profile"
                           className="text-sm text-amber-700 hover:text-amber-800 underline"
                         >
-                          Upgrade to Premium for 100 experiments/month →
+                          Upgrade to Premium for 100 studies/month →
                         </Link>
                       </div>
                     )}
@@ -311,7 +311,7 @@ export function Upload() {
                 ) : (
                   <>
                     <h3 className="font-medium text-blue-800">
-                      {experimentAllotment.currentAllotment} experiment{experimentAllotment.currentAllotment !== 1 ? 's' : ''} available
+                      {experimentAllotment.currentAllotment} stud{experimentAllotment.currentAllotment !== 1 ? 'ies' : 'y'} available
                     </h3>
                     <p className="text-sm text-blue-700 mt-1">
                       {experimentAllotment.tierLabel} tier • {experimentAllotment.refillRate}
